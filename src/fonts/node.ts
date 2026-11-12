@@ -1,40 +1,36 @@
 /**
  * node 入口。
  *
- * 注入 `fabric/node` 那份 bundle + node-canvas 驱动。
+ * 只注入 `fabric/node` 那份 bundle；字体加载逻辑与浏览器完全一致
+ * （fetch + opentype 解析），所以这里没有 registerFont / 落盘缓存之类的分支。
+ *
  * ⚠️ 不要和浏览器入口混用：fabric 与 fabric/node 的 classRegistry 是两份，
- * 混用会导致 enlivenObjects 反序列化时找不到 FontTextBox。
+ * 混用会导致 enlivenObjects 反序列化时找不到 FontText。
  */
 import * as Fabric from 'fabric/node'
 import { FontManager } from './core/FontManager.ts'
-import { createFontTextBox } from './core/createFontTextBox.ts'
-import { nodeFontDriver } from './drivers/node.ts'
+import { createFontText } from './core/createFontText.ts'
 
-export const runtime = 'node' as const
+/** node 端进程级字体管理器 */
+export const fontManager = new FontManager()
 
-/** node 端进程级字体注册表 */
-export const fontManager = new FontManager(nodeFontDriver)
+/** 用 opentype 字形路径渲染的文字图层（单对象，不拆字） */
+export const FontText = createFontText({ fabric: Fabric, manager: fontManager })
 
-/** 接受在线字体 URL 的自定义 TextBox */
-export const FontTextBox = createFontTextBox({
-  fabric: Fabric,
-  manager: fontManager,
-})
-
+export { Font } from './core/Font.ts'
 export { FontManager } from './core/FontManager.ts'
-export { createFontTextBox } from './core/createFontTextBox.ts'
-export { deriveFontFamily, getFontFileName, getFontFormat } from './core/deriveFontFamily.ts'
-export { createNodeDriver, nodeFontDriver } from './drivers/node.ts'
-export type { NodeFontDriverOptions } from './drivers/node.ts'
-export { detectRuntime, assertRuntime } from './env.ts'
-export type { FontTextBoxOptions, FontTextBoxInstance } from './core/createFontTextBox.ts'
+export { createFontText } from './core/createFontText.ts'
+export { deriveFontFamily, getFontFileName, getFontFormat } from './core/FontManager.ts'
+export type { FontTextOptions, FontTextInstance, CreateFontTextOptions } from './core/createFontText.ts'
+export type { LayoutOptions, LayoutResult, LayoutLine, PlacedGlyph, TextAlign } from './core/layout.ts'
+export type { OtFont, OtGlyph, OtPath, OtCommand } from './core/opentype.ts'
 export type {
-  FontDriver,
   FontFormat,
-  FontLoadRequest,
-  FontLoadResult,
+  FontLoadOptions,
   FontManagerListener,
+  FontManagerOptions,
   FontRecord,
-  FontRuntime,
   FontStatus,
+  FontURLDescriptor,
+  GlyphRenderMode,
 } from './core/types.ts'
