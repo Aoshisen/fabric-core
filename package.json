@@ -13,7 +13,6 @@
   "dependencies": {
     "await-to-js": "^3.0.0",
     "fabric": "^7.4.0",
-    "opentype.js": "^2.0.0",
     "vue": "^3.5.45"
   },
   "optionalDependencies": {
@@ -31,6 +30,10 @@
     "#fabric": {
       "node": "fabric/node",
       "default": "fabric"
+    },
+    "#font-runtime": {
+      "node": "./src/core/font/runtime.node.ts",
+      "default": "./src/core/font/runtime.browser.ts"
     }
   }
 }

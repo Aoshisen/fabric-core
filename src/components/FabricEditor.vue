@@ -118,12 +118,15 @@ async function seedScene() {
     fill: '#1b2027',
   }
 
-  const glyphText = new FontText(seedText, { ...shared, fontURL: SEED_FONT_URL, fontWeight: "bold" })
+  const glyphText = new FontText(seedText, {
+    ...shared,
+    font: { name: SEED_FONT_NAME, url: SEED_FONT_URL },
+    fontWeight: 'bold',
+  })
 
   try {
+    // Font.load() 会把同一份字体注册成 FontFace，FabricText 与 FontText 共用
     await fontManager.get({ url: SEED_FONT_URL, name: SEED_FONT_NAME })
-    // 等 @font-face 真正可用，否则 FabricText 会按回退字体量尺寸
-    await document.fonts.load(`${fontSize}px "${SEED_FONT_NAME}"`)
   } catch (error) {
     message.value = `种子字体加载失败：${error instanceof Error ? error.message : String(error)}`
   }
@@ -143,17 +146,17 @@ async function seedScene() {
   c.requestRenderAll()
   syncCounts()
 
-  // 自检：同字体同参数下，两个图层的尺寸与包围盒应当重合
+  // 自检：同字体同参数下，两个图层的包围盒应当重合
+  // （FontText 现在是 Textbox，width 是盒子宽度，和 FabricText 的内容宽不同，只比位置和高度）
   const a = fabricText.getBoundingRect()
   const bRect = glyphText.getBoundingRect()
   const deltas = {
-    width: fabricText.width - glyphText.width,
     height: fabricText.height - glyphText.height,
     left: a.left - bRect.left,
     top: a.top - bRect.top,
   }
   console.info('[seed] FabricText vs FontText 对齐检查', deltas)
-  message.value = `对齐检查 Δwidth=${deltas.width.toFixed(2)} Δheight=${deltas.height.toFixed(2)} Δleft=${deltas.left.toFixed(2)} Δtop=${deltas.top.toFixed(2)}`
+  message.value = `对齐检查 Δheight=${deltas.height.toFixed(2)} Δleft=${deltas.left.toFixed(2)} Δtop=${deltas.top.toFixed(2)}`
 }
 
 function center() {

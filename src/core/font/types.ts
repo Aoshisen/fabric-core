@@ -34,10 +34,6 @@ export interface FontURLDescriptor {
   css: string
 }
 
-/** 'Font.load()' 的可选参数，两端通用 */
-export interface FontLoadOptions {
-  signal?: AbortSignal
-}
 
 /** 字体实体的状态视图：由 Promise 与字形表推导，不单独存储 */
 export type FontStatus = 'loading' | 'loaded' | 'error'

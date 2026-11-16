@@ -1,15 +1,9 @@
-/** 字体加载 / 解析失败的原因分类 */
+/** 字体加载失败的原因分类 */
 export type FontErrorCode =
-  /** fetch 本身失败（网络、CORS、DNS、被 abort） */
-  | 'network'
-  /** HTTP 状态码非 2xx */
-  | 'http'
-  /** 响应体为空 */
-  | 'empty'
-  /** 格式不支持（当前是 woff2，opentype.js 解不了） */
-  | 'unsupported-format'
-  /** 字节解析失败（文件损坏 / 不是字体） */
-  | 'parse'
+  /** 当前环境没有 FontFace（node / 老浏览器） */
+  | 'unsupported'
+  /** 浏览器加载字体失败（网络 / CORS / 文件损坏） */
+  | 'load'
 
 /**
  * 字体加载的唯一错误类型。
