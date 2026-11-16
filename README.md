@@ -211,7 +211,7 @@ font.toCSS()  // 单个字体的 @font-face
 layoutText(otFont, text, {
   fontSize,        // 字号
   maxWidth,        // 传了才换行，不传单行
-  lineHeight,      // fontSize 的倍数，默认取 ascender - descender + lineGap
+  lineHeight,      // fontSize 的倍数，默认 1.16（与 fabric Text 一致）
   letterSpacing,   // CSS letter-spacing 语义
   align,           // left | center | right | justify
   breakLongWords,  // 超宽单词是否按字符强制断开，默认 true
@@ -318,6 +318,7 @@ canvas.renderAll()
 | `text` | 文本内容（字符串，与 IText 一致） |
 | `fontSize` / `lineHeight` / `letterSpacing` / `align` / `wrapWidth` / `breakLongWords` | 排版参数，任一变化自动重排 |
 | `renderMode` | `merged` / `glyph` |
+| `fontWeight` | 与 FabricText 同名同语义：`'bold'` / `'bolder'` / `>= 600` 走假加粗（同色描边外扩 0.03em），不改排版宽度；真字重请换 bold 字体文件 |
 | `fontStatus` | `unloaded` / `loading` / `loaded` / `error` |
 | `loadFont()` | 等待字体就绪，多次调用共享同一个 Promise |
 | `getLayout()` | 取排版结果（行、字形、pathData） |

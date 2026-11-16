@@ -10,13 +10,20 @@ import type { OtCommand, OtFont, OtGlyph } from '../../core/font/opentype.ts'
 
 export type TextAlign = 'left' | 'center' | 'right' | 'justify'
 
+/** 行盒基数：行盒高度 = fontSize * 1.13，与 fabric Text 的 _fontSizeMult 对齐 */
+const TEXT_LINE_BOX_MULT = 1.13
+/** 默认行高倍数，与 fabric Text 的默认 lineHeight 对齐 */
+const DEFAULT_LINE_HEIGHT = 1.16
+/** 基线下移比例：与 fabric Text 的 _fontSizeFraction (0.222) 互补，基线 = 行盒 * 0.778 */
+const TEXT_BASELINE_FRACTION = 1 - 0.222
+
 export interface LayoutOptions {
   fontSize: number
   /** 有值时开启自动换行；不传则单行 */
   maxWidth?: number
   /** 每个字符后追加的额外间距（px），CSS letter-spacing 语义 */
   letterSpacing?: number
-  /** 行高（fontSize 的倍数），默认取字体 ascender - descender + lineGap */
+  /** 行高（fontSize 的倍数），默认 1.16；行盒 = fontSize * 1.13，与 fabric Text 对齐 */
   lineHeight?: number
   align?: TextAlign
   /** 单个词超过整体宽度时是否按字符强制断开 */
@@ -69,7 +76,7 @@ const CLOSING_PUNCT = new Set('，。、；：？！）】」』》〉…·,.;:?
 /** 行尾禁则：这些字符不能出现在行尾 */
 const OPENING_PUNCT = new Set('（【「『《〈([{“‘')
 
-type ClusterKind = 'space' | 'word' | 'char'
+type ClusterKind = 'space' | 'word' | 'char' | 'break'
 
 interface Cluster {
   text: string
@@ -77,17 +84,18 @@ interface Cluster {
 }
 
 /**
- * 断行单元：空白 / 一整段拉丁词 / 单个 CJK 字符（含全角标点）。
+ * 断行单元：硬换行 / 空白 / 一整段拉丁词 / 单个 CJK 字符（含全角标点）。
  * 拉丁词整体不可分割，CJK 逐字都可作为断点。
  */
 function tokenize(text: string): Cluster[] {
   const clusters: Cluster[] = []
-  const pattern = /(\s+)|([^\s\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]+)|([\s\S])/g
+  const pattern = /(\r\n|\r|\n)|(\s+)|([^\s\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]+)|([\s\S])/g
   let match: RegExpExecArray | null
   while ((match = pattern.exec(text))) {
-    if (match[1]) clusters.push({ text: match[1], kind: 'space' })
-    else if (match[2]) clusters.push({ text: match[2], kind: 'word' })
-    else clusters.push({ text: match[3], kind: 'char' })
+    if (match[1]) clusters.push({ text: match[1], kind: 'break' })
+    else if (match[2]) clusters.push({ text: match[2], kind: 'space' })
+    else if (match[3]) clusters.push({ text: match[3], kind: 'word' })
+    else clusters.push({ text: match[4], kind: 'char' })
   }
   return clusters
 }
@@ -141,6 +149,8 @@ interface RawLine {
   width: number
   /** 行尾空白悬挂，不计入宽度 */
   hangingSpace: boolean
+  /** 该行第一个字符在原始 text 中的下标（跳过了行首空白 / 换行符的偏移） */
+  startIndex: number
 }
 
 function buildLines(font: OtFont, text: string, options: LayoutOptions): RawLine[] {
@@ -151,15 +161,19 @@ function buildLines(font: OtFont, text: string, options: LayoutOptions): RawLine
   const lines: RawLine[] = []
   let current: Cluster[] = []
   let currentWidth = 0
+  let currentStart = 0
   let lastGlyph: OtGlyph | null = null
+  let textCursor = 0
+  let endsWithBreak = false
 
-  const flush = (hangingSpace: boolean) => {
+  const flush = () => {
+    const hangingSpace = current.length > 0 && current[current.length - 1].kind === 'space'
     let width = currentWidth
     if (hangingSpace) {
       const tail = current[current.length - 1]
       width -= measureRun(font, tail.text, fontSize, letterSpacing).width
     }
-    lines.push({ clusters: current, width, hangingSpace })
+    lines.push({ clusters: current, width, hangingSpace, startIndex: currentStart })
     current = []
     currentWidth = 0
     lastGlyph = null
@@ -167,36 +181,60 @@ function buildLines(font: OtFont, text: string, options: LayoutOptions): RawLine
 
   for (let i = 0; i < clusters.length; i++) {
     const cluster = clusters[i]
+    const clusterStart = textCursor
+    textCursor += cluster.text.length
+
+    // 硬换行：立刻断行，空段落也占一行（与 fabric Text 的 split 行为一致）
+    if (cluster.kind === 'break') {
+      if (current.length === 0) currentStart = clusterStart
+      flush()
+      endsWithBreak = true
+      continue
+    }
+    endsWithBreak = false
+
     const metrics = measureRun(font, cluster.text, fontSize, letterSpacing, lastGlyph)
 
-    // 行首不放空白
-    if (current.length === 0 && cluster.kind === 'space') continue
-
-    if (current.length > 0 && canBreakBefore(clusters[i - 1], cluster) && currentWidth + metrics.width > limit) {
-      flush(current[current.length - 1].kind === 'space')
+    if (current.length === 0) {
+      currentStart = clusterStart
+      // 行首不放空白
+      if (cluster.kind === 'space') continue
+    } else if (canBreakBefore(clusters[i - 1], cluster) && currentWidth + metrics.width > limit) {
+      flush()
+      currentStart = clusterStart
       if (cluster.kind === 'space') continue
     }
 
     // 单个单元本身超宽：按字符强制拆开
     if (current.length === 0 && metrics.width > limit && breakLongWords && cluster.text.length > 1) {
       let chunk = ''
+      let chunkStart = clusterStart
+      let chunkChars = 0
       let chunkWidth = 0
       let chunkLast: OtGlyph | null = null
       for (const char of cluster.text) {
         const single = measureRun(font, char, fontSize, letterSpacing, chunkLast)
         if (chunk && chunkWidth + single.width > limit) {
-          lines.push({ clusters: [{ text: chunk, kind: 'word' }], width: chunkWidth, hangingSpace: false })
+          lines.push({
+            clusters: [{ text: chunk, kind: 'word' }],
+            width: chunkWidth,
+            hangingSpace: false,
+            startIndex: chunkStart,
+          })
           chunk = ''
+          chunkStart = clusterStart + chunkChars
           chunkWidth = 0
           chunkLast = null
         }
         const added = measureRun(font, char, fontSize, letterSpacing, chunkLast)
         chunk += char
+        chunkChars += char.length
         chunkWidth += added.width
         chunkLast = added.lastGlyph
       }
       if (chunk) {
         current = [{ text: chunk, kind: 'word' }]
+        currentStart = chunkStart
         currentWidth = chunkWidth
         lastGlyph = chunkLast
       }
@@ -208,9 +246,8 @@ function buildLines(font: OtFont, text: string, options: LayoutOptions): RawLine
     lastGlyph = metrics.lastGlyph
   }
 
-  if (current.length || lines.length === 0) {
-    flush(current.length > 0 && current[current.length - 1].kind === 'space')
-  }
+  // 以换行结尾时补一个空行，与 'a\\n'.split('\\n') === ['a', ''] 对齐
+  if (current.length || lines.length === 0 || endsWithBreak) flush()
   return lines
 }
 
@@ -323,19 +360,22 @@ export function layoutText(font: OtFont, text: string, options: LayoutOptions): 
   const scale = fontSize / font.unitsPerEm
   const ascent = font.ascender * scale
   const descent = Math.abs(font.descender) * scale
-  const lineGap = (font.tables.hhea?.lineGap ?? 0) * scale
-  const lineHeight = options.lineHeight ? options.lineHeight * fontSize : ascent + descent + lineGap
+  // 行盒与行距按 fabric Text 的模型算，height 才能和 IText 对上：
+  //   行盒 = fontSize * 1.13；单行高度 = 行盒；多行 = 行盒 + (n-1) * 行盒 * lineHeight
+  const lineBox = fontSize * TEXT_LINE_BOX_MULT
+  const lineHeight = lineBox * (options.lineHeight ?? DEFAULT_LINE_HEIGHT)
+  // 基线跟 fabric Text 走：行盒顶部往下 1.13 * 0.778 * fontSize，
+  // 这样同一个 left / top / 字体 / 字号下，两种图层的字形落点一致
+  const firstBaseline = lineBox * TEXT_BASELINE_FRACTION
   const align = options.align ?? 'left'
   const maxWidth = options.maxWidth && options.maxWidth > 0 ? options.maxWidth : Number.POSITIVE_INFINITY
 
   const rawLines = buildLines(font, text, { ...options, maxWidth: Number.isFinite(maxWidth) ? maxWidth : undefined })
 
   const lines: LayoutLine[] = []
-  let charCursor = 0
   for (let i = 0; i < rawLines.length; i++) {
-    const line = placeLine(font, rawLines[i], i, charCursor, fontSize, letterSpacing, ascent + i * lineHeight)
-    charCursor = line.endIndex
-    lines.push(line)
+    const raw = rawLines[i]
+    lines.push(placeLine(font, raw, i, raw.startIndex, fontSize, letterSpacing, firstBaseline + i * lineHeight))
   }
 
   const contentWidth = lines.reduce((max, line) => Math.max(max, line.width), 0)
@@ -356,7 +396,7 @@ export function layoutText(font: OtFont, text: string, options: LayoutOptions): 
     glyphs,
     pathData,
     width: Number.isFinite(maxWidth) ? Math.max(maxWidth, contentWidth) : contentWidth,
-    height: lines.length * lineHeight,
+    height: lines.length > 1 ? lineBox + (lines.length - 1) * lineHeight : lineBox,
     ascent,
     descent,
     lineHeight,

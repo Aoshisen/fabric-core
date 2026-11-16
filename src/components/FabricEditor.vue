@@ -9,6 +9,7 @@ import {
   type FabricObject,
 } from 'fabric'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { Font, fontManager, FontText } from '../fonts/index.ts'
 
 const workspaceRef = ref<HTMLDivElement | null>(null)
 const canvasElRef = ref<HTMLCanvasElement | null>(null)
@@ -20,6 +21,24 @@ const message = ref('就绪')
 
 let resizeObserver: ResizeObserver | null = null
 let cascade = 0
+
+/** 种子场景里 FontText 用的在线字体（woff，CDN 带 CORS，含中文与拉丁字形） */
+const SEED_FONT_URL =
+  'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5.2.5/files/noto-sans-sc-chinese-simplified-400-normal.woff'
+/** 同一份字体注册给原生 canvas 文本用的 family 名 */
+const SEED_FONT_NAME = 'SeedNotoSansSC'
+
+/**
+ * 把同一份字体文件声明成 @font-face，
+ * 这样 FabricText（走 ctx.fillText + 宿主字体）和 FontText（自己解析字形）用的是同一个文件。
+ */
+function injectSeedFontFace() {
+  if (document.querySelector(`style[data-seed-font="${SEED_FONT_NAME}"]`)) return
+  const style = document.createElement('style')
+  style.dataset.seedFont = SEED_FONT_NAME
+  style.textContent = Font.parse(SEED_FONT_URL, SEED_FONT_NAME).css
+  document.head.appendChild(style)
+}
 
 const accents = ['#f97316', '#38bdf8', '#a78bfa', '#34d399', '#f472b6']
 function nextColor() {
@@ -55,11 +74,12 @@ function resize() {
   c.requestRenderAll()
 }
 
-function seedScene() {
+async function seedScene() {
   const c = canvas.value
   if (!c) return
   const w = c.getWidth()
   const h = c.getHeight()
+  injectSeedFontFace()
 
   c.add(
     new Rect({
@@ -79,14 +99,6 @@ function seedScene() {
       fill: '#38bdf8',
       shadow: softShadow(18),
     }),
-    new FabricText('Fabric.js 7', {
-      left: w / 2 - 300,
-      top: h / 2 + 20,
-      fontFamily: 'PingFang SC, sans-serif',
-      fontSize: 40,
-      fontWeight: 'bold',
-      fill: '#1b2027',
-    }),
     new IText('双击这里编辑文字', {
       left: w / 2 - 300,
       top: h / 2 + 84,
@@ -95,8 +107,53 @@ function seedScene() {
       fill: '#4f8cff',
     }),
   )
+
+  // 两种文本图层用同一份字体、同样的参数，位置应当完全重合
+  const seedText = 'Fabric.js 7'
+  const fontSize = 40
+  const shared = {
+    left: w / 2 - 300,
+    top: h / 2 + 20,
+    fontSize,
+    fill: '#1b2027',
+  }
+
+  const glyphText = new FontText(seedText, { ...shared, fontURL: SEED_FONT_URL, fontWeight: "bold" })
+
+  try {
+    await fontManager.get({ url: SEED_FONT_URL, name: SEED_FONT_NAME })
+    // 等 @font-face 真正可用，否则 FabricText 会按回退字体量尺寸
+    await document.fonts.load(`${fontSize}px "${SEED_FONT_NAME}"`)
+  } catch (error) {
+    message.value = `种子字体加载失败：${error instanceof Error ? error.message : String(error)}`
+  }
+
+  const fabricText = new FabricText(seedText, { ...shared, fontFamily: SEED_FONT_NAME, fontWeight: "bold" })
+  c.add(fabricText, glyphText)
+  c.requestRenderAll()
+
+  try {
+    await glyphText.loadFont()
+  } catch (error) {
+    message.value = `FontText 加载失败：${error instanceof Error ? error.message : String(error)}`
+    syncCounts()
+    return
+  }
+
   c.requestRenderAll()
   syncCounts()
+
+  // 自检：同字体同参数下，两个图层的尺寸与包围盒应当重合
+  const a = fabricText.getBoundingRect()
+  const bRect = glyphText.getBoundingRect()
+  const deltas = {
+    width: fabricText.width - glyphText.width,
+    height: fabricText.height - glyphText.height,
+    left: a.left - bRect.left,
+    top: a.top - bRect.top,
+  }
+  console.info('[seed] FabricText vs FontText 对齐检查', deltas)
+  message.value = `对齐检查 Δwidth=${deltas.width.toFixed(2)} Δheight=${deltas.height.toFixed(2)} Δleft=${deltas.left.toFixed(2)} Δtop=${deltas.top.toFixed(2)}`
 }
 
 function center() {
@@ -257,7 +314,7 @@ onMounted(() => {
   canvas.value = c
 
   resize()
-  seedScene()
+  void seedScene()
 
   const onSelection = () => {
     selectedCount.value = c.getActiveObjects().length

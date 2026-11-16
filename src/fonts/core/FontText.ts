@@ -13,7 +13,7 @@ export interface FontTextOptions {
   autoLoad?: boolean
   /** 字号，默认 24 */
   fontSize?: number
-  /** 行高倍数，默认取字体 ascender - descender + lineGap */
+  /** 行高倍数，默认 1.16（与 fabric Text 的默认 lineHeight 一致） */
   lineHeight?: number
   /** 字距（px），CSS letter-spacing 语义 */
   letterSpacing?: number
@@ -25,6 +25,11 @@ export interface FontTextOptions {
   breakLongWords?: boolean
   /** 字形绘制方式，默认 merged */
   renderMode?: GlyphRenderMode
+  /**
+   * 字重，与 FabricText 同名字段：'normal' | 'bold' | 'bolder' | 100~900。
+   * 只有一个字体文件，所以 >= 600 走假加粗（同色描边外扩）；真要真字重请换 bold 字体文件。
+   */
+  fontWeight?: string | number
   /** 其余原样透传给 fabric FabricObject（left / top / fill / angle …） */
   [key: string]: unknown
 }
@@ -38,6 +43,7 @@ export interface FontTextInstance extends FabricObject {
   align: TextAlign
   wrapWidth: number | undefined
   renderMode: GlyphRenderMode
+  fontWeight: string | number
   readonly fontStatus: FontStatus | 'unloaded'
   loadFont(): Promise<Font>
   getLayout(): LayoutResult | null
@@ -104,6 +110,7 @@ export class FontText extends FabricObject {
     'wrapWidth',
     'breakLongWords',
     'renderMode',
+    'fontWeight',
   ]
   /** 进撤销/重做状态快照 */
   static stateProperties = [
@@ -117,6 +124,7 @@ export class FontText extends FabricObject {
     'wrapWidth',
     'breakLongWords',
     'renderMode',
+    'fontWeight',
   ]
 
   /* ------------------------------ 内部状态 ------------------------------ */
@@ -132,6 +140,7 @@ export class FontText extends FabricObject {
   private _wrapWidth: number | undefined
   private _breakLongWords = true
   private _renderMode: GlyphRenderMode = 'merged'
+  private _fontWeight: string | number = 'normal'
   private _autoLoad = true
   private _font: Font | null = null
   private _fontTask: Promise<Font> | null = null
@@ -158,6 +167,7 @@ export class FontText extends FabricObject {
       wrapWidth,
       breakLongWords,
       renderMode,
+      fontWeight,
       text: _ignoredText,
       ...rest
     } = source
@@ -176,6 +186,7 @@ export class FontText extends FabricObject {
     if (wrapWidth !== undefined) this._wrapWidth = wrapWidth
     if (breakLongWords !== undefined) this._breakLongWords = breakLongWords
     if (renderMode !== undefined) this._renderMode = renderMode
+    if (fontWeight !== undefined) this._fontWeight = fontWeight
 
     this._active = true
     this.re_layout()
@@ -294,6 +305,29 @@ export class FontText extends FabricObject {
     this.canvas?.requestRenderAll()
   }
 
+  /** 字重，语义与 FabricText 一致；只影响绘制，不改排版宽度 */
+  get fontWeight(): string | number {
+    return this._fontWeight
+  }
+
+  set fontWeight(value: string | number) {
+    const next = value ?? 'normal'
+    if (next === this._fontWeight) return
+    this._fontWeight = next
+    this.dirty = true
+    this.canvas?.requestRenderAll()
+  }
+
+  /** 'bolder' / 'bold' / >= 600 都按粗体处理（只有一个字体文件，所以是假加粗） */
+  private get isBold(): boolean {
+    const weight = this._fontWeight
+    if (typeof weight === 'number') return weight >= 600
+    const value = String(weight).trim().toLowerCase()
+    if (value === 'bold' || value === 'bolder') return true
+    const numeric = Number(value)
+    return Number.isFinite(numeric) && numeric >= 600
+  }
+
   get fontStatus(): FontStatus | 'unloaded' {
     if (this._font) return 'loaded'
     if (this._fontTask) return 'loading'
@@ -402,16 +436,43 @@ export class FontText extends FabricObject {
         if (!placed.commands.length) continue
         ctx.beginPath()
         replayCommands(ctx, placed.commands)
-        this._renderPaintInOrder(ctx)
+        this.paint(ctx)
       }
     } else {
       // 合并成一条路径、一次 fill：调用最少，绝大多数正体字体没问题
       ctx.beginPath()
       for (const placed of layout.glyphs) replayCommands(ctx, placed.commands)
-      this._renderPaintInOrder(ctx)
+      this.paint(ctx)
     }
 
     ctx.restore()
+  }
+
+  /**
+   * 填充当前路径。
+   *
+   * 假加粗没有真正的 bold 字形，就把 outline 当描边再描一遍：
+   * 临时把 stroke 借成 fill、lineWidth 取 0.03em，画完立刻还原，
+   * 这样不会污染对象自身的 stroke / strokeWidth，也不会进序列化。
+   */
+  private paint(ctx: CanvasRenderingContext2D): void {
+    if (!this.isBold || !this.fill) {
+      this._renderPaintInOrder(ctx)
+      return
+    }
+
+    const stroke = this.stroke
+    const strokeWidth = this.strokeWidth
+    const strokeLineJoin = this.strokeLineJoin
+
+    this.stroke = this.fill
+    this.strokeWidth = this.fontSize * 0.03
+    this.strokeLineJoin = 'round'
+    this._renderPaintInOrder(ctx)
+
+    this.stroke = stroke
+    this.strokeWidth = strokeWidth
+    this.strokeLineJoin = strokeLineJoin
   }
 
   /* ----------------------------- 序列化 ----------------------------- */
