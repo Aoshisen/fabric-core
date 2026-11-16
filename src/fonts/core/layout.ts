@@ -6,7 +6,7 @@
  * - 每个字形的落点和宽度都可读可改，字距 / 行距 / 对齐 / 变形都能自己控制
  * - 换行、禁则、断词全部在这里处理，不经过 `ctx.measureText`
  */
-import type { OtCommand, OtFont, OtGlyph } from './opentype.ts'
+import type { OtCommand, OtFont, OtGlyph } from '../../core/font/opentype.ts'
 
 export type TextAlign = 'left' | 'center' | 'right' | 'justify'
 

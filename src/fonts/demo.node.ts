@@ -14,8 +14,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { basename } from 'node:path'
 import { StaticCanvas, util } from 'fabric/node'
-import type { FontTextInstance } from './core/createFontText.ts'
-import { FontText, fontManager } from './node.ts'
+import type { FontTextInstance } from './core/FontText.ts'
+import { Font, FontText, fontManager } from './node.ts'
 
 const LATIN_CANDIDATES = [
   process.env.FONT_FILE,
@@ -69,7 +69,7 @@ try {
   const latinURL = `${base}/${encodeURIComponent(basename(latinFile))}`
   console.log('[1] 在线字体 URL :', latinURL)
 
-  const descriptor = fontManager.parseFontURL(latinURL)
+  const descriptor = Font.parse(latinURL)
   console.log('[2] 正则解析结果 :', {
     name: descriptor.name,
     family: descriptor.family,
@@ -80,12 +80,10 @@ try {
   console.log('[2b] 生成的 CSS  :\n' + descriptor.css)
 
   const started = performance.now()
-  const record = await fontManager.load(latinURL)
-  const font = fontManager.getFont(latinURL)
+  const font = await fontManager.get({ url: latinURL, name: descriptor.family })
   console.log('[3] 加载完成     :', {
-    status: record.status,
-    detail: record.detail,
-    glyphs: font?.numGlyphs,
+    status: font.status,
+    glyphs: font.numGlyphs,
     ms: Number((performance.now() - started).toFixed(1)),
   })
 
@@ -166,10 +164,9 @@ try {
   if (cjkFile) {
     const cjkURL = `${base}/${encodeURIComponent(basename(cjkFile))}`
     const cjkStart = performance.now()
-    await fontManager.load(cjkURL)
-    const cjkFont = fontManager.getFont(cjkURL)
+    const cjkFont = await fontManager.get({ url: cjkURL, name: Font.parse(cjkURL).family })
     console.log('[8] CJK 字体     :', {
-      glyphs: cjkFont?.numGlyphs,
+      glyphs: cjkFont.numGlyphs,
       parseMs: Number((performance.now() - cjkStart).toFixed(1)),
     })
 
@@ -196,7 +193,7 @@ try {
     console.log('[8] 跳过 CJK（未找到带中文字形的字体，可用 FONT_FILE_CJK 指定）')
   }
 
-  console.log('[9] manager.list():', fontManager.list().map((r) => `${r.family} (${r.status}, ${r.detail ?? '-'})`))
+  console.log('[9] manager.size :', fontManager.size)
 
   canvas.renderAll()
   await mkdir('dist', { recursive: true })

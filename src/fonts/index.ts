@@ -1,35 +1,19 @@
 /**
- * 浏览器入口。
+ * 字体模块入口（浏览器 / node 共用）。
  *
- * 只做一件事：把「浏览器那份 fabric bundle」注入工厂。
- * 字体加载本身没有环境分支 —— 就是 fetch + opentype 解析。
+ * FontText 直接 `extends FabricObject`，拿到哪份 fabric bundle 由模块解析决定：
+ * package.json 的 `imports.#fabric` 在 node 下映射到 `fabric/node`，
+ * 浏览器打包时走默认的 `fabric`。因此这里没有运行时注入，也不需要两套类定义。
  *
- * node 端请使用 `./node.ts`（对应 `fabric/node` 那份 bundle）。
+ * 两个 bundle 的 classRegistry 也是各自独立的，各自注册自己的 FontText，
+ * 所以同一份源码在两端都能被 enlivenObjects 正确还原。
  */
-import * as Fabric from 'fabric'
-import { FontManager } from './core/FontManager.ts'
-import { createFontText } from './core/createFontText.ts'
-
-/** 浏览器端全局字体管理器 */
-export const fontManager = new FontManager()
-
-/** 用 opentype 字形路径渲染的文字图层（单对象，不拆字） */
-export const FontText = createFontText({ fabric: Fabric, manager: fontManager })
-
-export { Font } from './core/Font.ts'
-export { FontManager } from './core/FontManager.ts'
-export { createFontText } from './core/createFontText.ts'
-export { deriveFontFamily, getFontFileName, getFontFormat } from './core/FontManager.ts'
-export type { FontTextOptions, FontTextInstance, CreateFontTextOptions } from './core/createFontText.ts'
+export { FontText } from './core/FontText.ts'
+export type { FontTextInstance, FontTextOptions } from './core/FontText.ts'
+// 加载层在全局的 src/core/font，这里只做转出，方便从字体模块一处引用
+export { fontManager, Font, FontError, FontManager } from '../core/font/index.ts'
+export type { FontErrorCode, FontRequest } from '../core/font/index.ts'
+export type { FontFormat, FontLoadOptions, FontStatus, FontURLDescriptor } from '../core/font/index.ts'
 export type { LayoutOptions, LayoutResult, LayoutLine, PlacedGlyph, TextAlign } from './core/layout.ts'
-export type { OtFont, OtGlyph, OtPath, OtCommand } from './core/opentype.ts'
-export type {
-  FontFormat,
-  FontLoadOptions,
-  FontManagerListener,
-  FontManagerOptions,
-  FontRecord,
-  FontStatus,
-  FontURLDescriptor,
-  GlyphRenderMode,
-} from './core/types.ts'
+export type { OtFont, OtGlyph, OtPath, OtCommand } from '../core/font/opentype.ts'
+export type { GlyphRenderMode } from './core/types.ts'

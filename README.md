@@ -31,17 +31,23 @@
     ├── style.css
     ├── vite-env.d.ts
     ├── opentype.d.ts           # opentype.js 的最小类型声明
-    ├── fonts/                  # 在线字体能力（见下方专门章节）
-    │   ├── index.ts            # 浏览器入口：注入 fabric（浏览器 bundle）
-    │   ├── node.ts             # node 入口：注入 fabric/node
+    ├── core/
+    │   └── font/                   # 全局字体加载层（不依赖 fabric）
+    │       ├── Font.ts             # 单字体实体：URL → 名字/格式/CSS + fetch + opentype 解析
+    │       ├── FontError.ts        # 加载 / 解析失败的唯一错误类型（code 分类）
+    │       ├── FontManager.ts      # 按 { url, name } 取字体
+    │       ├── manager.ts          # 进程级单例 fontManager
+    │       ├── opentype.ts         # opentype 类型收窄与取字形封装
+    │       ├── types.ts            # 加载层类型
+    │       └── index.ts
+    ├── fonts/                  # 渲染层：fabric 文字图层（见下方专门章节）
+    │   ├── index.ts            # 浏览器入口：re-export core + FontText
+    │   ├── node.ts             # node 入口：re-export index（fabric/node 由 #fabric 映射）
     │   ├── demo.node.ts        # 可运行的 node 端演示
     │   └── core/
-    │       ├── Font.ts             # 单字体实体：URL → 名字/格式/CSS + fetch + opentype 解析
-    │       ├── FontManager.ts      # 注册表：URL 去重、并发合并、订阅
+    │       ├── FontText.ts         # 文字图层：单对象 + 多字形路径渲染
     │       ├── layout.ts           # 排版内核：断行 / 字距 / 行距 / 对齐 / 字形路径
-    │       ├── opentype.ts         # opentype 类型收窄与取字形封装
-    │       ├── createFontText.ts   # FontText 工厂：单对象 + 多字形渲染
-    │       └── types.ts
+    │       └── types.ts            # 渲染层类型
     └── components/
         └── FabricEditor.vue   # 画布编辑器示例
 ```
@@ -139,11 +145,11 @@ _render(ctx) {
 | 层 | 负责 |
 | --- | --- |
 | `Font`（一个 URL 一个实例） | 正则解析名字 / 格式 → CSS family 与 `@font-face`；`fetch` + `opentype.parse`；状态机 |
-| `FontManager` | 注册表：URL 去重、并发合并、订阅、批量预加载、样式表输出 |
+| `FontManager` | 按 `{ url, name }` 取字体：同名字复用实体，同 URL 合并并发 |
 | `FontText`（工厂产物） | 持有文本与排版缓存，`_render` 铺字形路径；序列化 / 反序列化 |
 | 入口 `index.ts` / `node.ts` | 只注入对应环境的 fabric bundle，其它全部共享 |
 
-`FontManager` 现在只剩「全局字体加载器」这一个职责，因为**字体不再占用宿主的 family 命名空间**，撞名去重、注册时序、卸载这些约束全部消失了。
+`FontManager` 只剩一件事：`get({ url, name })` 拿回加载好的 `Font`。因为**字体不再占用宿主的 family 命名空间**，撞名去重、注册时序这些约束全部消失了。
 
 ### URL 解析与 CSS 生成（`Font.parse()`）
 
@@ -154,9 +160,9 @@ const FONT_PATH_PATTERN = /^(?:.*[/\\])?([^/\\]+?)(?:\.(woff2|woff|ttf|otf|eot))
 ```
 
 ```ts
-import { fontManager, FontManager } from './fonts'
+import { Font } from './fonts'
 
-const d = fontManager.parseFontURL('https://cdn.x.com/fonts/Alibaba PuHuiTi-Bold.ttf?v=3')
+const d = Font.parse('https://cdn.x.com/fonts/Alibaba PuHuiTi-Bold.ttf?v=3')
 // {
 //   url: 'https://cdn.x.com/fonts/Alibaba PuHuiTi-Bold.ttf?v=3',
 //   fileName: 'Alibaba PuHuiTi-Bold.ttf',
@@ -169,8 +175,8 @@ const d = fontManager.parseFontURL('https://cdn.x.com/fonts/Alibaba PuHuiTi-Bold
 //   css: '@font-face { ... }',
 // }
 
-FontManager.parseURL(url)  // 静态纯解析，结果永远一致
-fontManager.toCSS()        // 所有已加载字体拼成的 @font-face 样式表（降级到原生文字时用）
+Font.parse(url)            // 静态纯解析，结果永远一致
+font.toCSS()               // 单个字体的 @font-face（降级到原生文字时用）
 ```
 
 - 取路径最后一段去掉扩展名 → 转成安全 CSS 标识符；**query / hash 不参与命名，但保留在真实请求地址里**。
@@ -185,7 +191,17 @@ fontManager.toCSS()        // 所有已加载字体拼成的 @font-face 样式�
 | `.eot` | `eot` | `embedded-opentype` |
 | 其他 / 无扩展名 | `unknown` | 省略 |
 
-> `deriveFontFamily` / `getFontFileName` / `getFontFormat` 仍从两个入口导出，但只是 `Font.parse()` 的兼容薄封装。
+### 字体管理器（`FontManager`）
+
+```ts
+const font = await fontManager.get({ url, name: 'Alibaba-PuHuiTi-Bold' })
+
+font.otFont   // 解析好的字形表
+font.toCSS()  // 单个字体的 @font-face
+```
+
+`name` 既是缓存 key，也是 CSS family：同 name 复用同一个实体，同 URL 合并同一次加载。
+失败时 `get()` reject 成 `FontError`，实体留在表里，再调一次 `get()` 就是重试。
 
 ### 排版内核（`layout.ts`）
 
@@ -250,7 +266,7 @@ import { FontText, fontManager } from './src/fonts/node.ts'
 const url = 'https://cdn.example.com/fonts/Alibaba-PuHuiTi-Bold.ttf'
 
 // 先加载再建对象：拿到字形表才能算尺寸
-await fontManager.load(url)
+await fontManager.get({ url, name: 'Alibaba-PuHuiTi-Bold' })
 
 const text = new FontText('服务端渲染的文本', {
   fontURL: url,
@@ -269,7 +285,7 @@ canvas.add(text)
 canvas.renderAll()
 ```
 
-两端唯一的区别就是注入的 fabric bundle；加载、解析、排版、渲染全部同一条代码路径。
+两端唯一的区别是模块解析拿到的 fabric bundle（`imports.#fabric`）；加载、解析、排版、渲染全部同一条代码路径。
 
 `npm run demo:font:node` 会本地起一个 HTTP 服务模拟「在线字体」，完整跑一遍 URL 推导 → 下载解析 → 注册表 → 排版 → 序列化往返 → PNG 输出，不依赖公网。可用 `FONT_FILE=/path/to/font.ttf` 指定字体文件。
 
@@ -312,18 +328,10 @@ canvas.renderAll()
 
 | 方法 | 说明 |
 | --- | --- |
-| `load(url)` | 加载，返回 `FontRecord`；同 URL 并发共享同一个 Promise，失败后可重试 |
-| `preload(urls)` | 批量预加载 |
-| `parseFontURL(url)` | 实例解析 → `FontURLDescriptor`（名字 / 格式 / CSS） |
-| `FontManager.parseURL(url)` | 静态纯解析 |
-| `toCSS({ onlyLoaded? })` | 注册表 → `@font-face` 样式表 |
-| `resolveFamily(url)` | 同步得到 family |
-| `get(url)` / `getFont(url)` | 查 `FontRecord` / 查 `Font` 实体 |
-| `fonts` | 全部 `Font` 实体（实时引用） |
-| `has(url)` / `isReady(url)` | 是否注册过 / 是否加载成功 |
-| `list()` / `loaded` | 快照 / 仅成功项 |
-| `subscribe(fn)` | 状态变化订阅，返回取消函数 |
-| `unload(url)` / `clear()` | 释放字形表，下次使用会重新加载 |
+| `get({ url, name })` | 取字体，返回 `Promise<Font>`；没加载过就现建并加载，失败 reject `FontError`，再调即重试 |
+| `peek(name)` / `has(name)` | 查已登记的实体（不触发加载） / 是否登记过 |
+| `delete(name)` / `clear()` | 释放字形表并移除登记 / 清空 |
+| `size` | 已登记字体数 |
 
 **Font**
 
@@ -333,11 +341,21 @@ canvas.renderAll()
 | `name` / `fileName` / `family` / `extension` / `format` / `cssFormat` | 解析产物 |
 | `src` / `css` / `toCSS()` | CSS 片段 |
 | `otFont` / `numGlyphs` | 解析后的字形表 / 字形数 |
-| `load(options?)` | `fetch` → `opentype.parse`；并发共享 Promise |
-| `status` / `error` / `isReady` / `detail` | 状态机与查询 |
-| `toRecord()` / `dispose()` | 记录对象 / 释放字形表 |
+| `load(options?)` | `fetch` → `opentype.parse`，resolve 字形表（`OtFont`）；并发共享 Promise，失败后调用即重试 |
+| `status` / `isReady` / `isPending` / `numGlyphs` | 状态推导与查询（状态不单独存储） |
+| `dispose()` | 释放字形表 |
 
-记录状态机为 `loading → loaded | error`，字段包含 `url / family / format / loadedAt / error / detail`。
+`status` 是由 `Promise` + 字形表推导出来的视图（`loaded` / `loading` / `error`），实体本身不存状态。
+
+失败原因不在状态里，`load()` reject 的就是 `FontError`：
+
+| `code` | 含义 |
+| --- | --- |
+| `network` | fetch 失败（网络 / CORS / abort），`cause` 保留原始错误 |
+| `http` | 状态码非 2xx，`status` 为对应状态码 |
+| `empty` | 响应体为空 |
+| `unsupported-format` | 格式不支持（当前是 woff2） |
+| `parse` | 字节解析失败，`cause` 保留 opentype 的原始错误 |
 
 ## 发布前检查
 

@@ -1,5 +1,7 @@
+import { to } from 'await-to-js'
+import { FontError } from './FontError.ts'
 import { parseFont, type OtFont } from './opentype.ts'
-import type { FontFormat, FontLoadOptions, FontRecord, FontStatus, FontURLDescriptor } from './types.ts'
+import type { FontFormat, FontLoadOptions, FontStatus, FontURLDescriptor } from './types.ts'
 
 /**
  * 一条正则，一次匹配同时取出「文件名主干」与「字体扩展名」。
@@ -112,20 +114,12 @@ export class Font {
   }
 
   readonly descriptor: FontURLDescriptor
-  /** 内部记录对象：加载过程中原地更新，保证 load() 返回的引用与注册表一致 */
-  private readonly recordInternal: FontRecord
-  private task: Promise<FontRecord> | null = null
+  /** 唯一状态源：成功给出字形表，失败 reject 成 FontError */
+  private task: Promise<OtFont> | null = null
   private _otFont: OtFont | null = null
 
   constructor(descriptor: FontURLDescriptor) {
     this.descriptor = descriptor
-    this.recordInternal = {
-      url: descriptor.url,
-      family: descriptor.family,
-      format: descriptor.format,
-      // Font 一旦被创建就进入加载流程
-      status: 'loading',
-    }
   }
 
   get url(): string {
@@ -167,20 +161,14 @@ export class Font {
     return this.descriptor.css
   }
 
+  /**
+   * 状态只是一层推导视图，不单独存储：
+   * 已拿到字形表 → loaded；加载中 → loading；其余（失败过 / 还没开始）→ error。
+   * 失败原因不在这里，去接 'load()' 的 reject（FontError.code）。
+   */
   get status(): FontStatus {
-    return this.recordInternal.status
-  }
-
-  get error(): string | undefined {
-    return this.recordInternal.error
-  }
-
-  get loadedAt(): number | undefined {
-    return this.recordInternal.loadedAt
-  }
-
-  get detail(): string | undefined {
-    return this.recordInternal.detail
+    if (this._otFont) return 'loaded'
+    return this.task ? 'loading' : 'error'
   }
 
   get isPending(): boolean {
@@ -201,10 +189,6 @@ export class Font {
     return this._otFont?.numGlyphs ?? 0
   }
 
-  /** 返回内部记录（非快照），供 FontManager.load() 直接返回 */
-  toRecord(): FontRecord {
-    return this.recordInternal
-  }
 
   toCSS(): string {
     return this.css
@@ -214,55 +198,59 @@ export class Font {
    * 下载并解析字体。整个流程只有 fetch + parse，不存在宿主分支。
    * 并发调用共享同一个 Promise；失败后再次调用会重试。
    */
-  load(options: FontLoadOptions = {}): Promise<FontRecord> {
-    if (this.isReady) return Promise.resolve(this.recordInternal)
-    if (this.task) return this.task
-
-    this.recordInternal.status = 'loading'
-    delete this.recordInternal.error
-    delete this.recordInternal.detail
-
-    this.task = (async () => {
-      try {
-        const response = await fetch(this.url, { signal: options.signal })
-        if (!response.ok) {
-          throw new Error(`[font] 下载字体失败 ${this.url}：HTTP ${response.status}`)
-        }
-        const buffer = await response.arrayBuffer()
-        if (buffer.byteLength === 0) throw new Error(`[font] 字体内容为空 ${this.url}`)
-
-        // opentype.js 支持 ttf / otf / woff；woff2 需要 Brotli 解压 + transform 还原，它不做
-        const realFormat = this.format === 'unknown' ? sniffFormat(new Uint8Array(buffer.slice(0, 4))) : this.format
-        if (realFormat === 'woff2') {
-          throw new Error(
-            `[font] opentype.js 不支持 woff2：${this.url}。` +
-              '请改用 ttf / otf / woff 地址，或在服务端先转码成 ttf。',
-          )
-        }
-
-        try {
-          this._otFont = parseFont(buffer)
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error)
-          throw new Error(`[font] 字体解析失败 ${this.url}（格式 ${realFormat}）：${reason}`)
-        }
-
-        this.recordInternal.status = 'loaded'
-        this.recordInternal.loadedAt = Date.now()
-        this.recordInternal.detail = `${this._otFont.numGlyphs} glyphs`
-        delete this.recordInternal.error
-        return this.recordInternal
-      } catch (error) {
-        this._otFont = null
-        this.recordInternal.status = 'error'
-        this.recordInternal.error = error instanceof Error ? error.message : String(error)
-        throw error instanceof Error ? error : new Error(String(error))
-      } finally {
-        this.task = null
-      }
-    })()
-
+  load(options: FontLoadOptions = {}): Promise<OtFont> {
+    if (this._otFont) return Promise.resolve(this._otFont)
+    // 失败后 task 会被清空，下一次调用自然就是重试
+    this.task ??= this.run(options)
     return this.task
+  }
+
+  /**
+   * 真正的加载流程：await-to-js 把异常收成返回值，
+   * 失败分支处理完就 throw，剩下的一律是成功路径，不需要 try / finally。
+   */
+  private async run(options: FontLoadOptions): Promise<OtFont> {
+    const [error, otFont] = await to(this.fetchOtFont(options))
+    this.task = null
+    if (error) throw error
+    this._otFont = otFont
+    return otFont
+  }
+
+  /** 下载 + 解析，返回字形表；任何一步失败都直接 reject */
+  private async fetchOtFont(options: FontLoadOptions): Promise<OtFont> {
+    const [fetchError, response] = await to(fetch(this.url, { signal: options.signal }))
+    if (fetchError) {
+      throw new FontError('network', this.url, `[font] 下载字体失败 ${this.url}：${fetchError.message}`, {
+        cause: fetchError,
+      })
+    }
+    if (!response.ok) {
+      throw new FontError('http', this.url, `[font] 下载字体失败 ${this.url}：HTTP ${response.status}`, {
+        status: response.status,
+      })
+    }
+    const buffer = await response.arrayBuffer()
+    if (buffer.byteLength === 0) throw new FontError('empty', this.url, `[font] 字体内容为空 ${this.url}`)
+
+    // opentype.js 支持 ttf / otf / woff；woff2 需要 Brotli 解压 + transform 还原，它不做
+    const realFormat = this.format === 'unknown' ? sniffFormat(new Uint8Array(buffer.slice(0, 4))) : this.format
+    if (realFormat === 'woff2') {
+      throw new FontError(
+        'unsupported-format',
+        this.url,
+        `[font] opentype.js 不支持 woff2：${this.url}。` + '请改用 ttf / otf / woff 地址，或在服务端先转码成 ttf。',
+      )
+    }
+
+    try {
+      return parseFont(buffer)
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause)
+      throw new FontError('parse', this.url, `[font] 字体解析失败 ${this.url}（格式 ${realFormat}）：${reason}`, {
+        cause,
+      })
+    }
   }
 
   /**
@@ -271,8 +259,6 @@ export class Font {
    */
   dispose(): void {
     this._otFont = null
-    this.recordInternal.status = 'loading'
-    delete this.recordInternal.loadedAt
-    delete this.recordInternal.detail
+    this.task = null
   }
 }

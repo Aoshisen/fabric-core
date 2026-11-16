@@ -11,6 +11,7 @@
     "demo:font:node": "node --experimental-strip-types src/fonts/demo.node.ts"
   },
   "dependencies": {
+    "await-to-js": "^3.0.0",
     "fabric": "^7.4.0",
     "opentype.js": "^2.0.0",
     "vue": "^3.5.45"
@@ -25,5 +26,11 @@
     "typescript": "~5.9.3",
     "vite": "^8.3.7",
     "vue-tsc": "^3.3.14"
+  },
+  "imports": {
+    "#fabric": {
+      "node": "fabric/node",
+      "default": "fabric"
+    }
   }
 }
