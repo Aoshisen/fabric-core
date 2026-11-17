@@ -41,7 +41,7 @@ export class FontText extends Textbox {
 
   private _font: FontSource | null = null
   private _fontStatus: FontTextStatus = 'unloaded'
-  private _autoWidth = false
+  private _autoWidth = true
   private _task: Promise<void> | null = null
 
   constructor(text: string, options: FontTextOptions = {} as FontTextOptions) {
@@ -136,7 +136,8 @@ export class FontText extends Textbox {
     for (let i = 0; i < this.textLines.length; i++) {
       content = Math.max(content, this.getLineWidth(i))
     }
-    this.width = Math.max(1, Math.ceil(content))
+    // +1px 余量：避免量到的宽度和 Textbox 折行计算的浮点结果差一点点就多折一行
+    this.width = Math.max(1, Math.ceil(content) + 1)
     this.initDimensions()
     this.dirty = true
     if (previous !== this.width) this.setCoords()
