@@ -21,46 +21,85 @@
 
 ```
 ├── index.html
-├── vite.config.ts          # Vite 配置
-├── tsconfig.json           # 项目引用入口
-├── tsconfig.app.json       # 应用代码（src）编译配置
-├── tsconfig.node.json      # 构建脚本（vite.config.ts）编译配置
+├── vite.config.ts              # Vite 配置
+├── tsconfig.json               # 项目引用入口
+├── tsconfig.app.json           # 应用代码（src）编译配置
+├── tsconfig.node.json          # 构建脚本（vite.config.ts）编译配置
+├── package.json                # 依赖 + #fabric / #font-runtime 两条模块解析映射
 └── src/
-    ├── main.ts
-    ├── App.vue
-    ├── style.css
-    ├── vite-env.d.ts
+    ├── main.ts                 # 应用入口：引入 libs 触发 FontText 注册
+    ├── App.vue                 # Naive UI 主题（dark）+ message 容器
+    ├── style.css               # 全局 CSS 变量 / reset
     ├── types/
-    │   └── fabric-events.d.ts      # 给 fabric ObjectEvents 补 FontText 的自定义事件
-    ├── font/                   # 字体加载层（不依赖 fabric）
-    │   ├── Font.ts             # 单字体实体：URL → 名字/格式/CSS + 运行时注册字体
-    │   ├── FontError.ts        # 加载失败的唯一错误类型
-    │   ├── FontManager.ts      # 按 { url, name } 取字体
-    │   ├── manager.ts          # 进程级单例 fontManager
-    │   ├── runtime.browser.ts  # FontFace 注册（#font-runtime 的 default）
-    │   ├── runtime.node.ts     # registerFont 注册（#font-runtime 的 node）
+    │   └── fabric-events.d.ts  # 模块增强：给 ObjectEvents 补 font:loaded
+    │
+    ├── font/                   # ① 字体加载层（无 Vue / 无 fabric）
+    │   ├── Font.ts             #    单字体：URL → 名字/格式/@font-face + 注册
+    │   ├── FontError.ts        #    统一错误类型
+    │   ├── FontManager.ts      #    { url, name } → Font，缓存 + 并发合并
+    │   ├── manager.ts          #    进程级单例 fontManager
+    │   ├── runtime.browser.ts  #    浏览器：FontFace + document.fonts
+    │   ├── runtime.node.ts     #    node：fetch → 临时文件 → registerFont
     │   ├── types.ts
     │   └── index.ts
-    ├── libs/                   # 可复用组件
-    │   ├── FontText.ts         # 文字图层：Textbox + font={name,url} 自动注册字体
-    │   ├── index.ts            # 浏览器入口：re-export FontText + 加载层
-    │   └── node.ts             # node 入口：re-export index（fabric/node 由 #fabric 映射）
-    ├── demo/
-    │   └── font.node.ts        # 可运行的 node 端演示
-    ├── property/                # 属性面板的数据层（无 Vue 组件）
-    │   ├── types.ts             # FieldDef / SectionDef / ShapeModel
-    │   ├── fields.ts            # 字段类型 → 展示组件映射
-    │   ├── schemas.ts           # 每种图层的字段 schema（数据）
-    │   └── useObjectModel.ts    # 对象读取 + 表单双向绑定（核心交互）
-    └── components/
-        ├── FabricEditor.vue     # 画布生命周期 + 编排（左栏 / 画布 / 属性面板）
-        ├── EditorSidebar.vue    # 左侧创建面板
-        ├── PropertyPanel.vue    # 右侧面板外壳（标题 / 空态）
-        └── property/
-            ├── PropertyField.vue    # 单字段渲染
-            └── PropertyForm.vue     # 聚合：按图层类型选 schema
+    │
+    ├── libs/                   # ② 可复用组件层（依赖 font，不依赖业务）
+    │   ├── FontText.ts         #    Textbox + font={name,url} 自动注册
+    │   ├── index.ts            #    浏览器入口：re-export FontText + font
+    │   └── node.ts             #    node 入口（#fabric 解析到 fabric/node）
+    │
+    ├── property/               # ③ 属性面板数据层（纯数据 / 逻辑，无 .vue）
+    │   ├── types.ts            #    ShapeModel / FieldDef / SectionDef
+    │   ├── fields.ts           #    FieldKind → 展示组件 + 默认 props
+    │   ├── schemas.ts          #    每类图层的字段 schema（match + fields）
+    │   └── useObjectModel.ts   #    对象读取 + 表单双向绑定
+    │
+    ├── components/             # ④ 编辑器 UI（依赖上面三层）
+    │   ├── FabricEditor.vue    #    三栏编排 + 画布生命周期 + 命令
+    │   ├── EditorSidebar.vue   #    左侧创建面板（只发事件，不碰 canvas）
+    │   ├── PropertyPanel.vue   #    右侧面板壳（标题 / 空态）
+    │   └── property/
+    │       ├── PropertyField.vue  # 单字段 → 具体控件
+    │       └── PropertyForm.vue   # section 聚合 + 选 schema
+    │
+    └── demo/
+        └── font.node.ts        # node 端端到端演示
 ```
 
+### 分层与依赖方向
+
+```
+components ──→ property
+     │
+     └──────→ libs ──→ font
+```
+
+| 层 | 目录 | 可以依赖 | 职责 | 不该做的事 |
+| --- | --- | --- | --- | --- |
+| 字体加载 | `src/font` | `fetch` / `FontFace` / `canvas`（通过 `#font-runtime` 注入） | URL 解析、`@font-face` 生成、注册、错误分类、缓存 | 不 import Vue / fabric / components |
+| 可复用组件 | `src/libs` | `src/font` | 提供能直接放进任意 fabric 画布的类（`FontText`） | 不 import components / property |
+| 属性数据 | `src/property` | fabric、`src/libs` | 字段 schema、字段→组件映射、对象↔表单同步 | 不写模板、不 import components |
+| 编辑器 UI | `src/components` | 以上全部 + `naive-ui` | 三栏布局、命令、画布生命周期 | 不直接拼字段定义（交给 property） |
+
+### 接入新能力
+
+1. **新增基础图形**
+   - `components/FabricEditor.vue` 的 `createShape` 加一个 `case`
+   - `components/EditorSidebar.vue` 的 `shapes` 数组加一项
+   - 需要专属属性时，走下面第 2 条
+2. **新增可编辑属性**
+   - `property/types.ts` 的 `ShapeModel` 加字段
+   - `property/schemas.ts` 对应 section 加 `FieldDef`（`kind` 决定用哪个控件）
+   - 若该字段需要从对象读出来，在 `property/useObjectModel.ts` 的 `readObject` 补一行
+3. **新增自定义图层**
+   - 类放 `src/libs/`，并从 `src/libs/index.ts` 导出
+   - `property/schemas.ts` 加一个 `match` 该类型的新 section
+   - `components/EditorSidebar.vue` 加按钮、`components/FabricEditor.vue` 加创建命令
+4. **新增字段控件类型**
+   - `property/fields.ts` 的 `FIELD_COMPONENTS` 加映射、`FIELD_DEFAULT_PROPS` 加默认 props
+5. **调整字体来源 / 加载行为**
+   - 只动 `src/font/`，上层无需修改
+   - 浏览器 / node 的差异写在 `runtime.*.ts`，由 `package.json` 的 `imports.#font-runtime` 选择
 ## fabric.js 7 迁移要点
 
 fabric 7 是纯 ESM 包，内置类型声明，API 与 v5 差异较大：
