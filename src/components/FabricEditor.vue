@@ -14,11 +14,10 @@ import {
 } from 'fabric'
 import { NFlex, NLayout, NLayoutContent, NLayoutFooter, NLayoutSider, useMessage } from 'naive-ui'
 import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import type { ShapeKind, SidebarItem } from '../config/sidebar.ts'
 import { FontText } from '../libs/index.ts'
 import EditorSidebar from './EditorSidebar.vue'
 import PropertyPanel from './PropertyPanel.vue'
-
-type ShapeKind = 'rect' | 'circle' | 'ellipse' | 'triangle' | 'polyline' | 'polygon' | 'path'
 
 const workspaceRef = ref<HTMLDivElement | null>(null)
 const canvasElRef = ref<HTMLCanvasElement | null>(null)
@@ -67,20 +66,16 @@ function center() {
 }
 
 function createShape(kind: ShapeKind): FabricObject {
-  const { x, y } = center()
-  const jitter = (cascade % 5) * 12
-  const left = x - 90 + jitter
-  const top = y - 60 + jitter
-
+  // 位置统一交给 placeRandom，这里只关心形状本身
   switch (kind) {
     case 'rect':
-      return new Rect({ left, top, width: 180, height: 120, rx: 14, ry: 14, fill: nextColor() })
+      return new Rect({ width: 180, height: 120, rx: 14, ry: 14, fill: nextColor() })
     case 'circle':
-      return new Circle({ left: left + 30, top, radius: 60, fill: nextColor() })
+      return new Circle({ radius: 60, fill: nextColor() })
     case 'ellipse':
-      return new Ellipse({ left: left + 30, top, rx: 80, ry: 55, fill: nextColor() })
+      return new Ellipse({ rx: 80, ry: 55, fill: nextColor() })
     case 'triangle':
-      return new Triangle({ left, top, width: 180, height: 140, fill: nextColor() })
+      return new Triangle({ width: 180, height: 140, fill: nextColor() })
     case 'polyline':
       return new Polyline(
         [
@@ -89,7 +84,7 @@ function createShape(kind: ShapeKind): FabricObject {
           { x: 120, y: 20 },
           { x: 180, y: -20 },
         ],
-        { left, top: top + 60, fill: '', stroke: nextColor(), strokeWidth: 4 },
+        { fill: '', stroke: nextColor(), strokeWidth: 4 },
       )
     case 'polygon':
       return new Polygon(
@@ -100,21 +95,75 @@ function createShape(kind: ShapeKind): FabricObject {
           { x: 40, y: 110 },
           { x: -20, y: 70 },
         ],
-        { left: left + 40, top, fill: nextColor() },
+        { fill: nextColor() },
       )
     case 'path':
-      return new Path('M 0 0 L 160 0 L 120 120 L 40 120 Z', { left, top, fill: nextColor() })
+      return new Path('M 0 0 L 160 0 L 120 120 L 40 120 Z', { fill: nextColor() })
   }
+}
+function placeRandom(obj: FabricObject) {
+  const c = canvas.value
+  if (!c) return
+
+  obj.setCoords()
+  const rect = obj.getBoundingRect()
+  const margin = 48
+  const spanX = Math.max(1, c.getWidth() - rect.width - margin * 2)
+  const spanY = Math.max(1, c.getHeight() - rect.height - margin * 2)
+  const x = margin + Math.random() * spanX
+  const y = margin + Math.random() * spanY
+
+  obj.set({ left: obj.left + (x - rect.left), top: obj.top + (y - rect.top) })
+  obj.setCoords()
 }
 
 function addObject(obj: FabricObject, label: string) {
   const c = canvas.value
   if (!c) return
   c.add(obj)
+  placeRandom(obj)
   c.setActiveObject(obj)
   c.requestRenderAll()
   syncCounts()
   message.success(`已添加${label}`)
+}
+
+/** 左侧栏所有按钮都走这里，具体行为按 config/sidebar.ts 里的 action 分发 */
+function onAction(item: SidebarItem) {
+  switch (item.action) {
+    case 'add-shape': {
+      const payload = item.payload as { kind: ShapeKind; label: string }
+      addShape(payload.kind, payload.label)
+      break
+    }
+    case 'add-text':
+      addText()
+      break
+    case 'add-font-text':
+      addFontText()
+      break
+    case 'front':
+      bringToFront()
+      break
+    case 'back':
+      sendToBack()
+      break
+    case 'remove':
+      removeSelected()
+      break
+    case 'clear':
+      clearAll()
+      break
+    case 'export-json':
+      exportJSON()
+      break
+    case 'export-png':
+      exportPNG()
+      break
+    // pick-image 由左侧栏自己触发 file input
+    case 'pick-image':
+      break
+  }
 }
 
 function addShape(kind: ShapeKind, label: string) {
@@ -145,6 +194,7 @@ function addFontText() {
     fill: '#1b2027',
   })
   c.add(text)
+  placeRandom(text)
   c.setActiveObject(text)
   c.requestRenderAll()
   syncCounts()
@@ -311,16 +361,8 @@ onBeforeUnmount(() => {
       <EditorSidebar
         :object-count="objectCount"
         :selected-count="selectedCount"
-        @add-shape="addShape"
-        @add-text="addText"
-        @add-font-text="addFontText"
-        @add-image="addImage"
-        @remove="removeSelected"
-        @clear="clearAll"
-        @front="bringToFront"
-        @back="sendToBack"
-        @export-json="exportJSON"
-        @export-png="exportPNG"
+        :on-action="onAction"
+        :on-add-image="addImage"
       />
     </n-layout-sider>
 

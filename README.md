@@ -48,6 +48,9 @@
     │   ├── index.ts            #    浏览器入口：re-export FontText + font
     │   └── node.ts             #    node 入口（#fabric 解析到 fabric/node）
     │
+    ├── config/
+    │   └── sidebar.ts          # 左侧栏配置：分组 / 按钮 / action（纯数据）
+    │
     ├── property/               # ③ 属性面板数据层（纯数据 / 逻辑，无 .vue）
     │   ├── types.ts            #    ShapeModel / FieldDef / SectionDef
     │   ├── fields.ts           #    FieldKind → 展示组件 + 默认 props
@@ -56,7 +59,8 @@
     │
     ├── components/             # ④ 编辑器 UI（依赖上面三层）
     │   ├── FabricEditor.vue    #    三栏编排 + 画布生命周期 + 命令
-    │   ├── EditorSidebar.vue   #    左侧创建面板（只发事件，不碰 canvas）
+    │   ├── EditorSidebar.vue   #    左侧面板：品牌 + 配置循环 + 文件选择
+    │   ├── SidebarGroup.vue    #    单分组渲染（标题 + 1/2 列按钮）
     │   ├── PropertyPanel.vue   #    右侧面板壳（标题 / 空态）
     │   └── property/
     │       ├── PropertyField.vue  # 单字段 → 具体控件
@@ -81,11 +85,20 @@ components ──→ property
 | 属性数据 | `src/property` | fabric、`src/libs` | 字段 schema、字段→组件映射、对象↔表单同步 | 不写模板、不 import components |
 | 编辑器 UI | `src/components` | 以上全部 + `naive-ui` | 三栏布局、命令、画布生命周期 | 不直接拼字段定义（交给 property） |
 
+### 数据流
+
+状态和命令都集中在 `components/FabricEditor.vue`（`canvas` / `activeObject` / 计数），子组件只做两件事：
+
+- **收数据**：`object` / `group` / `hasSelection` 等 props
+- **调回调**：`onAction(item)`、`onAddImage(file)`、`onSelect(item)` 这类函数 props
+
+子组件内部直接 `props.onXxx(...)`，不使用 `emit` 向上冒泡，保持单向数据流：父级改状态 → 子级重渲染 → 子级调父级传下来的函数。
+
 ### 接入新能力
 
 1. **新增基础图形**
+   - `config/sidebar.ts` 的「基础图形」分组里加一项（`action: 'add-shape'` + `payload: { kind, label }`）
    - `components/FabricEditor.vue` 的 `createShape` 加一个 `case`
-   - `components/EditorSidebar.vue` 的 `shapes` 数组加一项
    - 需要专属属性时，走下面第 2 条
 2. **新增可编辑属性**
    - `property/types.ts` 的 `ShapeModel` 加字段
@@ -94,7 +107,7 @@ components ──→ property
 3. **新增自定义图层**
    - 类放 `src/libs/`，并从 `src/libs/index.ts` 导出
    - `property/schemas.ts` 加一个 `match` 该类型的新 section
-   - `components/EditorSidebar.vue` 加按钮、`components/FabricEditor.vue` 加创建命令
+   - `config/sidebar.ts` 加按钮项（新 action），`components/FabricEditor.vue` 的 `onAction` 加分支
 4. **新增字段控件类型**
    - `property/fields.ts` 的 `FIELD_COMPONENTS` 加映射、`FIELD_DEFAULT_PROPS` 加默认 props
 5. **调整字体来源 / 加载行为**
@@ -126,8 +139,8 @@ const rect = new Rect({ ... })
 `src/components/FabricEditor.vue` 是一个最小可用编辑器，UI 用 Naive UI（`n-button` / `useMessage`，暗色主题由 `App.vue` 的 `n-config-provider` 提供）：
 
 - 启动是**空白画布**
-- 基础图形：矩形 / 圆形 / 椭圆 / 三角形 / 折线 / 多边形 / 路径（自动级联偏移；`Line` 在 fabric 7 已标记废弃，不再提供）
-- 自定义图层：`FontText`（在线字体）、`IText`（双击编辑）、图片（`n-upload` 本地文件 → `FabricImage.fromURL`）
+- 基础图形：矩形 / 圆形 / 椭圆 / 三角形 / 折线 / 多边形 / 路径（在画布内**随机摆放**；`Line` 在 fabric 7 已标记废弃，不再提供）
+- 自定义图层：`FontText`（在线字体）、`IText`（双击编辑）、图片（`n-upload` 选择本地文件 → `FabricImage.fromURL`）
 - 单选、Shift 多选、框选
 - 层级调整（置顶 / 置底）
 - `Delete` / `Backspace` 删除选中（文本编辑中不拦截）
