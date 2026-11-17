@@ -25,14 +25,14 @@ const {
   collapsed: leftCollapsed,
   resizing: leftResizing,
   onPointerDown: startLeftResize,
-} = usePanelResize({ initial: 232, min: 180, max: 380 })
+} = usePanelResize({ initial: 232, min: 180, max: 500 })
 
 const {
   width: rightWidth,
   collapsed: rightCollapsed,
   resizing: rightResizing,
   onPointerDown: startRightResize,
-} = usePanelResize({ initial: 272, min: 240, max: 480, direction: -1 })
+} = usePanelResize({ initial: 272, min: 240, max: 600, direction: -1 })
 
 // 右侧「预览」tab 的数据，切到该 tab 才生成缩略图
 const activeTab = ref('property')

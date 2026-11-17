@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import type { Canvas, FabricObject } from 'fabric'
-import { NEmpty, NTabPane, NTabs } from 'naive-ui'
+import { NEmpty, NImage, NTabPane, NTabs } from 'naive-ui'
+import { computed } from 'vue'
+import VueJsonPretty from 'vue-json-pretty'
+import 'vue-json-pretty/lib/styles.css'
 import PropertyForm from './property/PropertyForm.vue'
 
-defineProps<{
+const props = defineProps<{
   canvas: Canvas | null
   object: FabricObject | null
   /** 画布快照：JSON 与 PNG */
@@ -13,6 +16,14 @@ defineProps<{
   /** 切页交给父级，子组件只调用 */
   onTabChange: (value: string) => void
 }>()
+
+const parsed = computed<Record<string, unknown>>(() => {
+  try {
+    return JSON.parse(props.json) as Record<string, unknown>
+  } catch {
+    return {}
+  }
+})
 </script>
 
 <template>
@@ -27,12 +38,23 @@ defineProps<{
       <div class="preview">
         <p class="sub-title">图片预览</p>
         <div class="image-box">
-          <img v-if="image" :src="image" alt="画布预览" />
+          <n-image
+            v-if="image"
+            :src="image"
+            alt="画布预览"
+            object-fit="contain"
+            :img-props="{
+              style: 'max-width: 100%; max-height: 100%; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);',
+            }"
+          />
           <span v-else class="empty">暂无内容</span>
         </div>
 
         <p class="sub-title">JSON</p>
-        <pre class="json">{{ json }}</pre>
+        <div class="json-box">
+          <vue-json-pretty :data="parsed" :deep="2" :indent="2" :show-length="true" :show-icon="true"
+            :show-line="false" theme="dark" />
+        </div>
       </div>
     </n-tab-pane>
   </n-tabs>
@@ -58,19 +80,18 @@ defineProps<{
   color: var(--text-dim);
 }
 
-.json {
+.json-box {
   flex: 1;
-  min-height: 120px;
-  margin: 0;
-  padding: 8px 10px;
+  min-height: 160px;
+  padding: 6px 8px;
   overflow: auto;
   border-radius: 6px;
   background: var(--panel-2);
-  color: var(--text-dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.json-box :deep(.vjs-tree) {
   font-size: 11px;
   line-height: 1.55;
-  white-space: pre;
 }
 
 .image-box {
@@ -82,13 +103,6 @@ defineProps<{
   overflow: hidden;
   border-radius: 6px;
   background: var(--panel-2);
-}
-
-.image-box img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
 .empty {
