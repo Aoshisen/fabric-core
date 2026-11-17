@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { useEventListener, useResizeObserver } from '@vueuse/core'
 import { Canvas, IText, type FabricObject } from 'fabric'
 import { NFlex, NLayout, NLayoutContent, NLayoutFooter, NLayoutSider, useMessage } from 'naive-ui'
 import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { useEditorActions } from '../composables/useEditorActions.ts'
+import { usePanelResize } from '../composables/usePanelResize.ts'
 import EditorSidebar from './EditorSidebar.vue'
+import PanelResizer from './PanelResizer.vue'
 import PropertyPanel from './PropertyPanel.vue'
 
 const workspaceRef = ref<HTMLDivElement | null>(null)
@@ -15,7 +18,20 @@ const message = useMessage()
 const objectCount = ref(0)
 const selectedCount = ref(0)
 
-let resizeObserver: ResizeObserver | null = null
+// 左右侧栏：拖动改宽 + 单击收起
+const {
+  width: leftWidth,
+  collapsed: leftCollapsed,
+  resizing: leftResizing,
+  onPointerDown: startLeftResize,
+} = usePanelResize({ initial: 232, min: 180, max: 380 })
+
+const {
+  width: rightWidth,
+  collapsed: rightCollapsed,
+  resizing: rightResizing,
+  onPointerDown: startRightResize,
+} = usePanelResize({ initial: 272, min: 240, max: 480, direction: -1 })
 
 function syncCounts() {
   const c = canvas.value
@@ -89,25 +105,31 @@ onMounted(() => {
     c.zoomToPoint(c.getViewportPoint(evt), next)
     c.requestRenderAll()
   })
-
-  resizeObserver = new ResizeObserver(() => resize())
-  resizeObserver.observe(box)
-  window.addEventListener('keydown', handleKeydown)
 })
 
+// 画布随容器尺寸变化，键盘事件在窗口级监听
+useResizeObserver(workspaceRef, () => resize())
+useEventListener(window, 'keydown', handleKeydown)
+
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleKeydown)
-  resizeObserver?.disconnect()
-  resizeObserver = null
   canvas.value?.dispose()
   canvas.value = null
 })
 </script>
 
 <template>
-  <n-layout has-sider class="editor" content-style="height: 100%">
+  <n-layout
+    has-sider
+    class="editor"
+    :class="{ 'is-resizing': leftResizing || rightResizing }"
+    content-style="height: 100%"
+  >
     <n-layout-sider
-      :width="232"
+      :width="leftWidth"
+      :collapsed="leftCollapsed"
+      :collapsed-width="0"
+      :show-collapsed-content="false"
+      collapse-mode="width"
       bordered
       :native-scrollbar="false"
       content-style="padding: 18px 16px"
@@ -119,6 +141,8 @@ onBeforeUnmount(() => {
         :on-add-image="addImage"
       />
     </n-layout-sider>
+
+    <PanelResizer :collapsed="leftCollapsed" :on-pointer-down="startLeftResize" />
 
     <n-layout
       style="height: 100%"
@@ -142,9 +166,15 @@ onBeforeUnmount(() => {
       </n-layout-footer>
     </n-layout>
 
+    <PanelResizer :collapsed="rightCollapsed" :on-pointer-down="startRightResize" />
+
     <n-layout-sider
       sider-placement="right"
-      :width="272"
+      :width="rightWidth"
+      :collapsed="rightCollapsed"
+      :collapsed-width="0"
+      :show-collapsed-content="false"
+      collapse-mode="width"
       bordered
       :native-scrollbar="false"
       content-style="padding: 16px"
@@ -155,7 +185,21 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.editor { height: 100%; }
+.editor { height: 100%; overflow: hidden; }
+
+/* 拖动时关掉侧栏宽度过渡，宽度跟手；全局光标由根节点接管 */
+.editor.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.editor.is-resizing :deep(.n-layout-sider) {
+  transition: none !important;
+}
+
+.editor.is-resizing :deep(canvas) {
+  cursor: col-resize !important;
+}
 
 .workspace { position: relative; width: 100%; height: 100%; overflow: hidden; }
 
