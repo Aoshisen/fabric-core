@@ -74,9 +74,11 @@ const rect = new Rect({ ... })
 
 ## 示例功能
 
-`src/components/FabricEditor.vue` 已实现一个最小可用的编辑器：
+`src/components/FabricEditor.vue` 是一个最小可用编辑器，UI 用 Naive UI（`n-button` / `useMessage`，暗色主题由 `App.vue` 的 `n-config-provider` 提供）：
 
-- 添加矩形 / 圆形 / 文本（自动级联偏移）
+- 启动是**空白画布**
+- 基础图形：矩形 / 圆形 / 椭圆 / 三角形 / 折线 / 多边形 / 路径（自动级联偏移；`Line` 在 fabric 7 已标记废弃，不再提供）
+- 自定义图层：`FontText`（在线字体）、`IText`（双击编辑）、图片（`n-upload` 本地文件 → `FabricImage.fromURL`）
 - 单选、Shift 多选、框选
 - 层级调整（置顶 / 置底）
 - `Delete` / `Backspace` 删除选中（文本编辑中不拦截）
