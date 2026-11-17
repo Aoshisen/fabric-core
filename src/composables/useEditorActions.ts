@@ -41,7 +41,7 @@ function nextColor() {
   return ACCENTS[colorIndex++ % ACCENTS.length]
 }
 
-/** 编辑器里的所有「命令」：创建 / 删除 / 层级 / 导出，全部由 canvas 驱动 */
+/** 编辑器里的所有「命令」：创建 / 删除 / 层级，全部由 canvas 驱动 */
 export function useEditorActions(options: UseEditorActionsOptions) {
   const { message, onChanged } = options
 
@@ -209,30 +209,6 @@ export function useEditorActions(options: UseEditorActionsOptions) {
     canvas.requestRenderAll()
   }
 
-  function download(name: string, href: string) {
-    const a = document.createElement('a')
-    a.href = href
-    a.download = name
-    a.click()
-  }
-
-  function exportJSON() {
-    const canvas = canvasOf()
-    if (!canvas) return
-    const json = JSON.stringify(canvas.toObject(), null, 2)
-    const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
-    download('fabric-scene.json', url)
-    URL.revokeObjectURL(url)
-    message.success('已导出 JSON')
-  }
-
-  function exportPNG() {
-    const canvas = canvasOf()
-    if (!canvas) return
-    download('fabric-scene.png', canvas.toDataURL({ format: 'png', multiplier: 2 }))
-    message.success('已导出 PNG')
-  }
-
   /** 左侧栏按钮统一入口：按 config/sidebar.ts 的 action 分发 */
   function onAction(item: SidebarItem) {
     switch (item.action) {
@@ -259,12 +235,6 @@ export function useEditorActions(options: UseEditorActionsOptions) {
       case 'clear':
         clearAll()
         break
-      case 'export-json':
-        exportJSON()
-        break
-      case 'export-png':
-        exportPNG()
-        break
       // pick-image 由 n-upload 直接回调 onAddImage
       case 'pick-image':
         break
@@ -281,7 +251,5 @@ export function useEditorActions(options: UseEditorActionsOptions) {
     clearAll,
     bringToFront,
     sendToBack,
-    exportJSON,
-    exportPNG,
   }
 }

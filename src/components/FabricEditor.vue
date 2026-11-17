@@ -2,7 +2,8 @@
 import { useEventListener, useResizeObserver } from '@vueuse/core'
 import { Canvas, IText, type FabricObject } from 'fabric'
 import { NFlex, NLayout, NLayoutContent, NLayoutFooter, NLayoutSider, useMessage } from 'naive-ui'
-import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { useCanvasPreview } from '../composables/useCanvasPreview.ts'
 import { useEditorActions } from '../composables/useEditorActions.ts'
 import { usePanelResize } from '../composables/usePanelResize.ts'
 import EditorSidebar from './EditorSidebar.vue'
@@ -32,6 +33,17 @@ const {
   resizing: rightResizing,
   onPointerDown: startRightResize,
 } = usePanelResize({ initial: 272, min: 240, max: 480, direction: -1 })
+
+// 右侧「预览」tab 的数据，切到该 tab 才生成缩略图
+const activeTab = ref('property')
+const { json: previewJson, image: previewImage, sync: syncPreview } = useCanvasPreview({
+  canvas,
+  enabled: () => activeTab.value === 'preview',
+})
+
+watch(activeTab, (tab) => {
+  if (tab === 'preview') syncPreview()
+})
 
 function syncCounts() {
   const c = canvas.value
@@ -93,8 +105,19 @@ onMounted(() => {
   c.on('selection:created', onSelection)
   c.on('selection:updated', onSelection)
   c.on('selection:cleared', onSelection)
-  c.on('object:added', syncCounts)
-  c.on('object:removed', syncCounts)
+
+  // 场景变化后刷新右侧预览
+  const onSceneChange = () => {
+    syncCounts()
+    syncPreview()
+  }
+  c.on('object:added', onSceneChange)
+  c.on('object:removed', onSceneChange)
+  c.on('object:modified', syncPreview)
+  c.on('text:changed', syncPreview)
+
+  syncCounts()
+  syncPreview()
 
   c.on('mouse:wheel', (opt) => {
     const evt = opt.e
@@ -118,41 +141,19 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <n-layout
-    has-sider
-    class="editor"
-    :class="{ 'is-resizing': leftResizing || rightResizing }"
-    content-style="height: 100%"
-  >
-    <n-layout-sider
-      :width="leftWidth"
-      :collapsed="leftCollapsed"
-      :collapsed-width="0"
-      :show-collapsed-content="false"
-      collapse-mode="width"
-      bordered
-      :native-scrollbar="false"
-      content-style="padding: 18px 16px"
-    >
-      <EditorSidebar
-        :object-count="objectCount"
-        :selected-count="selectedCount"
-        :on-action="onAction"
-        :on-add-image="addImage"
-      />
+  <n-layout has-sider class="editor" :class="{ 'is-resizing': leftResizing || rightResizing }"
+    content-style="height: 100%">
+    <n-layout-sider :width="leftWidth" :collapsed="leftCollapsed" :collapsed-width="0" :show-collapsed-content="false"
+      collapse-mode="width" bordered :native-scrollbar="false" content-style="padding: 18px 16px">
+      <EditorSidebar :object-count="objectCount" :selected-count="selectedCount" :on-action="onAction"
+        :on-add-image="addImage" />
     </n-layout-sider>
 
     <PanelResizer :collapsed="leftCollapsed" :on-pointer-down="startLeftResize" />
 
-    <n-layout
-      style="height: 100%"
-      content-style="display: flex; flex-direction: column; height: 100%;"
-    >
-      <NLayoutContent
-        style="flex: 1; min-height: 0"
-        :native-scrollbar="false"
-        content-style="height: 100%; background: #ffffff;"
-      >
+    <n-layout style="height: 100%" content-style="display: flex; flex-direction: column; height: 100%;">
+      <NLayoutContent style="flex: 1; min-height: 0" :native-scrollbar="false"
+        content-style="height: 100%; background: #ffffff;">
         <div ref="workspaceRef" class="workspace">
           <canvas ref="canvasElRef" />
         </div>
@@ -168,24 +169,20 @@ onBeforeUnmount(() => {
 
     <PanelResizer :collapsed="rightCollapsed" :on-pointer-down="startRightResize" />
 
-    <n-layout-sider
-      sider-placement="right"
-      :width="rightWidth"
-      :collapsed="rightCollapsed"
-      :collapsed-width="0"
-      :show-collapsed-content="false"
-      collapse-mode="width"
-      bordered
-      :native-scrollbar="false"
-      content-style="padding: 16px"
-    >
-      <PropertyPanel :canvas="canvas" :object="activeObject" />
+    <n-layout-sider sider-placement="right" :width="rightWidth" :collapsed="rightCollapsed" :collapsed-width="0"
+      :show-collapsed-content="false" collapse-mode="width" bordered :native-scrollbar="false"
+      content-style="padding: 16px">
+      <PropertyPanel :canvas="canvas" :object="activeObject" :json="previewJson" :image="previewImage" :tab="activeTab"
+        :on-tab-change="(value) => (activeTab = value)" />
     </n-layout-sider>
   </n-layout>
 </template>
 
 <style scoped>
-.editor { height: 100%; overflow: hidden; }
+.editor {
+  height: 100%;
+  overflow: hidden;
+}
 
 /* 拖动时关掉侧栏宽度过渡，宽度跟手；全局光标由根节点接管 */
 .editor.is-resizing {
@@ -201,7 +198,15 @@ onBeforeUnmount(() => {
   cursor: col-resize !important;
 }
 
-.workspace { position: relative; width: 100%; height: 100%; overflow: hidden; }
+.workspace {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
 
-.statusbar { font-size: 12px; color: var(--text-dim); }
+.statusbar {
+  font-size: 12px;
+  color: var(--text-dim);
+}
 </style>

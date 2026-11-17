@@ -7,12 +7,8 @@ defineProps<{
 </script>
 
 <template>
-  <div
-    class="panel-resizer"
-    :class="{ 'is-collapsed': collapsed }"
-    title="拖动调整宽度，单击收起 / 展开"
-    @pointerdown="onPointerDown"
-  >
+  <div class="panel-resizer" :class="{ 'is-collapsed': collapsed }" title="拖动调整宽度，单击收起 / 展开"
+    @pointerdown="onPointerDown">
     <span class="grip" />
   </div>
 </template>

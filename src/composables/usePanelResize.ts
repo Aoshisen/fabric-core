@@ -16,7 +16,7 @@ export interface PanelResizeOptions {
 const CLICK_THRESHOLD = 3
 
 /**
- * 侧栏宽度：拖动改宽、单击收起 / 展开。
+ * 侧栏宽度：拖动改变、单击收起 / 展开。
  * 全局指针事件交给 useEventListener，作用域销毁时自动解绑。
  */
 export function usePanelResize({ initial, min, max, direction = 1 }: PanelResizeOptions) {

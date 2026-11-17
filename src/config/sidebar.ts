@@ -10,8 +10,6 @@ export type ActionName =
   | 'back'
   | 'remove'
   | 'clear'
-  | 'export-json'
-  | 'export-png'
 
 export interface SidebarItem {
   label: string
@@ -73,14 +71,6 @@ export const SIDEBAR_GROUPS: SidebarGroup[] = [
     items: [
       { label: '删除选中', action: 'remove', type: 'error', secondary: true, requiresSelection: true },
       { label: '清空画布', action: 'clear', tertiary: true },
-    ],
-  },
-  {
-    title: '导出',
-    columns: 2,
-    items: [
-      { label: 'JSON', action: 'export-json', secondary: true },
-      { label: 'PNG', action: 'export-png', secondary: true },
     ],
   },
 ]
