@@ -32,20 +32,21 @@
     ├── vite-env.d.ts
     ├── types/
     │   └── fabric-events.d.ts      # 给 fabric ObjectEvents 补 FontText 的自定义事件
-    ├── core/
-    │   └── font/                   # 全局字体加载层（不依赖 fabric）
-    │       ├── Font.ts             # 单字体实体：URL → 名字/格式/CSS + 运行时注册字体
-    │       ├── FontError.ts        # 加载 / 解析失败的唯一错误类型（code 分类）
-    │       ├── FontManager.ts      # 按 { url, name } 取字体
-    │       ├── manager.ts          # 进程级单例 fontManager
-    │       ├── types.ts            # 加载层类型
-    │       └── index.ts
-    ├── fonts/                  # 渲染层：fabric 文字图层（见下方专门章节）
-    │   ├── index.ts            # 浏览器入口：re-export core + FontText
-    │   ├── node.ts             # node 入口：re-export index（fabric/node 由 #fabric 映射）
-    │   ├── demo.node.ts        # 可运行的 node 端演示
-    │   └── core/
-    │       └── FontText.ts         # 文字图层：Textbox + font={name,url} 自动注册字体
+    ├── font/                   # 字体加载层（不依赖 fabric）
+    │   ├── Font.ts             # 单字体实体：URL → 名字/格式/CSS + 运行时注册字体
+    │   ├── FontError.ts        # 加载失败的唯一错误类型
+    │   ├── FontManager.ts      # 按 { url, name } 取字体
+    │   ├── manager.ts          # 进程级单例 fontManager
+    │   ├── runtime.browser.ts  # FontFace 注册（#font-runtime 的 default）
+    │   ├── runtime.node.ts     # registerFont 注册（#font-runtime 的 node）
+    │   ├── types.ts
+    │   └── index.ts
+    ├── libs/                   # 可复用组件
+    │   ├── FontText.ts         # 文字图层：Textbox + font={name,url} 自动注册字体
+    │   ├── index.ts            # 浏览器入口：re-export FontText + 加载层
+    │   └── node.ts             # node 入口：re-export index（fabric/node 由 #fabric 映射）
+    ├── demo/
+    │   └── font.node.ts        # 可运行的 node 端演示
     └── components/
         └── FabricEditor.vue   # 画布编辑器示例
 ```
@@ -111,8 +112,8 @@ await text.loadFont()   // 可省略：构造时自动加载，加载完会重�
 
 | 层 | 位置 | 职责 |
 | --- | --- | --- |
-| 加载层 | `src/core/font` | URL → 名字 / 格式 / `@font-face`，再按环境注册（`#font-runtime`：浏览器 `FontFace`、node `registerFont`）；错误分类 + 进程级单例，不依赖 fabric |
-| 图层 | `src/fonts` | `FontText` = `Textbox` + `font` → 注册字体；浏览器 / node 入口 |
+| 加载层 | `src/font` | URL → 名字 / 格式 / `@font-face`，再按环境注册（`#font-runtime`：浏览器 `FontFace`、node `registerFont`）；错误分类 + 进程级单例，不依赖 fabric |
+| 图层 | `src/libs` | `FontText` = `Textbox` + `font` → 注册字体；浏览器 / node 入口 |
 
 加载层的 `Font.parse()` 负责 URL → 名字 / 格式 / `@font-face` 规则，`FontText` 注入样式时用它；`FontManager` 提供跨模块共享的字体缓存。
 
@@ -135,7 +136,7 @@ const text = new FontText('服务端渲染的文本', { font: { name, url }, fon
 await text.loadFont()
 ```
 
-`src/core/font/runtime.node.ts` 会 fetch 字体字节 → 写临时文件 → `canvas.registerFont()`，临时文件在进程退出时统一清理（node-canvas 是懒读取，不能提前删）。
+`src/font/runtime.node.ts` 会 fetch 字体字节 → 写临时文件 → `canvas.registerFont()`，临时文件在进程退出时统一清理（node-canvas 是懒读取，不能提前删）。
 环境分支由 `package.json` 的 `imports.#font-runtime` 在解析阶段决定，业务代码里没有 `if (node)`。
 
 ### 与 Textbox 的差异

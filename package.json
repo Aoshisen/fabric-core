@@ -8,7 +8,7 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc -b --force",
-    "demo:font:node": "node --experimental-strip-types src/fonts/demo.node.ts"
+    "demo:font:node": "node --experimental-strip-types src/demo/font.node.ts"
   },
   "dependencies": {
     "await-to-js": "^3.0.0",
@@ -32,8 +32,8 @@
       "default": "fabric"
     },
     "#font-runtime": {
-      "node": "./src/core/font/runtime.node.ts",
-      "default": "./src/core/font/runtime.browser.ts"
+      "node": "./src/font/runtime.node.ts",
+      "default": "./src/font/runtime.browser.ts"
     }
   }
 }

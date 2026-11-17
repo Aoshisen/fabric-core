@@ -1,5 +1,5 @@
 import { classRegistry, Textbox } from '#fabric'
-import { fontManager } from '../../core/font/manager.ts'
+import { fontManager } from '../font/manager.ts'
 
 /** 字体加载状态（视图用） */
 export type FontTextStatus = 'unloaded' | 'loading' | 'loaded' | 'error'

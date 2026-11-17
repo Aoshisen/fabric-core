@@ -13,8 +13,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { basename } from 'node:path'
 import { StaticCanvas, util } from 'fabric/node'
-import type { FontTextInstance } from './core/FontText.ts'
-import { Font, FontText } from './node.ts'
+import type { FontTextInstance } from '../libs/FontText.ts'
+import { Font, FontText } from '../libs/node.ts'
 
 const LATIN_CANDIDATES = [
   process.env.FONT_FILE,

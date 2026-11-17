@@ -9,7 +9,7 @@ import {
   type FabricObject,
 } from 'fabric'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
-import { Font, fontManager, FontText } from '../fonts/index.ts'
+import { Font, fontManager, FontText } from '../libs/index.ts'
 
 const workspaceRef = ref<HTMLDivElement | null>(null)
 const canvasElRef = ref<HTMLCanvasElement | null>(null)
