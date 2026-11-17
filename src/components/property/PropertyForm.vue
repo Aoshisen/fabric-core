@@ -3,8 +3,8 @@ import type { Canvas, FabricObject } from 'fabric'
 import { NDivider, NForm, NSpace } from 'naive-ui'
 import { computed } from 'vue'
 import PropertyField from './PropertyField.vue'
-import { BASE_SECTIONS, LAYER_SECTIONS } from '../../property/schemas.ts'
-import { useObjectModel } from '../../property/useObjectModel.ts'
+import { BASE_SECTIONS, LAYER_SECTIONS } from '../../config/property_form.ts'
+import { useObjectModel } from '../../composables/useObjectModel.ts'
 
 const props = defineProps<{ canvas: Canvas | null; object: FabricObject | null }>()
 

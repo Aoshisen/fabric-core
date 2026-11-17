@@ -1,6 +1,6 @@
 import { Circle, Ellipse, IText, Rect, Textbox, type Canvas, type FabricObject } from 'fabric'
 import { onScopeDispose, reactive, toValue, watch, type MaybeRefOrGetter } from 'vue'
-import type { ShapeModel } from './types.ts'
+import type { ShapeModel } from '../config/property_form.ts'
 
 function round(value: number): number {
   return Math.round(value * 100) / 100

@@ -1,21 +1,8 @@
 <script setup lang="ts">
-import {
-  Canvas,
-  Circle,
-  Ellipse,
-  FabricImage,
-  IText,
-  Path,
-  Polygon,
-  Polyline,
-  Rect,
-  Triangle,
-  type FabricObject,
-} from 'fabric'
+import { Canvas, IText, type FabricObject } from 'fabric'
 import { NFlex, NLayout, NLayoutContent, NLayoutFooter, NLayoutSider, useMessage } from 'naive-ui'
 import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
-import type { ShapeKind, SidebarItem } from '../config/sidebar.ts'
-import { FontText } from '../libs/index.ts'
+import { useEditorActions } from '../composables/useEditorActions.ts'
 import EditorSidebar from './EditorSidebar.vue'
 import PropertyPanel from './PropertyPanel.vue'
 
@@ -29,17 +16,6 @@ const objectCount = ref(0)
 const selectedCount = ref(0)
 
 let resizeObserver: ResizeObserver | null = null
-let cascade = 0
-
-const FONT = {
-  name: 'Noto Sans SC',
-  url: 'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5.2.5/files/noto-sans-sc-chinese-simplified-400-normal.woff',
-}
-
-const accents = ['#f97316', '#38bdf8', '#a78bfa', '#34d399', '#f472b6']
-function nextColor() {
-  return accents[cascade++ % accents.length]
-}
 
 function syncCounts() {
   const c = canvas.value
@@ -50,6 +26,13 @@ function syncCounts() {
   activeObject.value = active.length === 1 ? active[0] : null
 }
 
+// 所有命令都在这个 composable 里，FabricEditor 只负责画布生命周期与编排
+const { onAction, addImage, removeSelected } = useEditorActions({
+  canvas,
+  message,
+  onChanged: syncCounts,
+})
+
 function resize() {
   const el = workspaceRef.value
   const c = canvas.value
@@ -58,235 +41,6 @@ function resize() {
   if (!width || !height) return
   c.setDimensions({ width: Math.floor(width), height: Math.floor(height) })
   c.requestRenderAll()
-}
-
-function center() {
-  const c = canvas.value
-  return c ? { x: c.getWidth() / 2, y: c.getHeight() / 2 } : { x: 0, y: 0 }
-}
-
-function createShape(kind: ShapeKind): FabricObject {
-  // 位置统一交给 placeRandom，这里只关心形状本身
-  switch (kind) {
-    case 'rect':
-      return new Rect({ width: 180, height: 120, rx: 14, ry: 14, fill: nextColor() })
-    case 'circle':
-      return new Circle({ radius: 60, fill: nextColor() })
-    case 'ellipse':
-      return new Ellipse({ rx: 80, ry: 55, fill: nextColor() })
-    case 'triangle':
-      return new Triangle({ width: 180, height: 140, fill: nextColor() })
-    case 'polyline':
-      return new Polyline(
-        [
-          { x: 0, y: 0 },
-          { x: 60, y: -40 },
-          { x: 120, y: 20 },
-          { x: 180, y: -20 },
-        ],
-        { fill: '', stroke: nextColor(), strokeWidth: 4 },
-      )
-    case 'polygon':
-      return new Polygon(
-        [
-          { x: 0, y: 0 },
-          { x: 80, y: 0 },
-          { x: 100, y: 70 },
-          { x: 40, y: 110 },
-          { x: -20, y: 70 },
-        ],
-        { fill: nextColor() },
-      )
-    case 'path':
-      return new Path('M 0 0 L 160 0 L 120 120 L 40 120 Z', { fill: nextColor() })
-  }
-}
-function placeRandom(obj: FabricObject) {
-  const c = canvas.value
-  if (!c) return
-
-  obj.setCoords()
-  const rect = obj.getBoundingRect()
-  const margin = 48
-  const spanX = Math.max(1, c.getWidth() - rect.width - margin * 2)
-  const spanY = Math.max(1, c.getHeight() - rect.height - margin * 2)
-  const x = margin + Math.random() * spanX
-  const y = margin + Math.random() * spanY
-
-  obj.set({ left: obj.left + (x - rect.left), top: obj.top + (y - rect.top) })
-  obj.setCoords()
-}
-
-function addObject(obj: FabricObject, label: string) {
-  const c = canvas.value
-  if (!c) return
-  c.add(obj)
-  placeRandom(obj)
-  c.setActiveObject(obj)
-  c.requestRenderAll()
-  syncCounts()
-  message.success(`已添加${label}`)
-}
-
-/** 左侧栏所有按钮都走这里，具体行为按 config/sidebar.ts 里的 action 分发 */
-function onAction(item: SidebarItem) {
-  switch (item.action) {
-    case 'add-shape': {
-      const payload = item.payload as { kind: ShapeKind; label: string }
-      addShape(payload.kind, payload.label)
-      break
-    }
-    case 'add-text':
-      addText()
-      break
-    case 'add-font-text':
-      addFontText()
-      break
-    case 'front':
-      bringToFront()
-      break
-    case 'back':
-      sendToBack()
-      break
-    case 'remove':
-      removeSelected()
-      break
-    case 'clear':
-      clearAll()
-      break
-    case 'export-json':
-      exportJSON()
-      break
-    case 'export-png':
-      exportPNG()
-      break
-    // pick-image 由左侧栏自己触发 file input
-    case 'pick-image':
-      break
-  }
-}
-
-function addShape(kind: ShapeKind, label: string) {
-  addObject(createShape(kind), label)
-}
-
-function addText() {
-  const { x, y } = center()
-  const text = new IText('双击编辑文本', {
-    left: x - 70,
-    top: y - 16,
-    fontFamily: 'PingFang SC, sans-serif',
-    fontSize: 28,
-    fill: '#1b2027',
-  })
-  addObject(text, '文本')
-}
-
-function addFontText() {
-  const c = canvas.value
-  if (!c) return
-  const { x, y } = center()
-  const text = new FontText('在线字体 FontText', {
-    font: { ...FONT },
-    left: x - 120,
-    top: y - 20,
-    fontSize: 32,
-    fill: '#1b2027',
-  })
-  c.add(text)
-  placeRandom(text)
-  c.setActiveObject(text)
-  c.requestRenderAll()
-  syncCounts()
-  void text
-    .loadFont()
-    .then(() => {
-      c.requestRenderAll()
-      message.success('FontText 已就绪')
-    })
-    .catch((error: unknown) => {
-      message.error(`字体加载失败：${error instanceof Error ? error.message : String(error)}`)
-    })
-}
-
-async function addImage(file: File) {
-  const c = canvas.value
-  if (!c) return
-  const url = URL.createObjectURL(file)
-  try {
-    const image = await FabricImage.fromURL(url)
-    const { x, y } = center()
-    const scale = Math.min(1, 240 / Math.max(image.width, image.height))
-    image.set({ left: x, top: y, originX: 'center', originY: 'center', scaleX: scale, scaleY: scale })
-    addObject(image, '图片')
-  } catch (error) {
-    message.error(`图片加载失败：${error instanceof Error ? error.message : String(error)}`)
-  } finally {
-    URL.revokeObjectURL(url)
-  }
-}
-
-function removeSelected() {
-  const c = canvas.value
-  if (!c) return
-  const active = c.getActiveObjects()
-  if (!active.length) {
-    message.warning('没有选中任何对象')
-    return
-  }
-  c.discardActiveObject()
-  active.forEach((obj) => c.remove(obj))
-  c.requestRenderAll()
-  syncCounts()
-  message.success(`已删除 ${active.length} 个对象`)
-}
-
-function clearAll() {
-  const c = canvas.value
-  if (!c) return
-  c.clear()
-  c.backgroundColor = '#ffffff'
-  c.requestRenderAll()
-  syncCounts()
-  message.info('画布已清空')
-}
-
-function bringToFront() {
-  const c = canvas.value
-  if (!c) return
-  c.getActiveObjects().forEach((obj) => c.bringObjectToFront(obj))
-  c.requestRenderAll()
-}
-
-function sendToBack() {
-  const c = canvas.value
-  if (!c) return
-  c.getActiveObjects().forEach((obj) => c.sendObjectToBack(obj))
-  c.requestRenderAll()
-}
-
-function download(name: string, href: string) {
-  const a = document.createElement('a')
-  a.href = href
-  a.download = name
-  a.click()
-}
-
-function exportJSON() {
-  const c = canvas.value
-  if (!c) return
-  const json = JSON.stringify(c.toObject(), null, 2)
-  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
-  download('fabric-scene.json', url)
-  URL.revokeObjectURL(url)
-  message.success('已导出 JSON')
-}
-
-function exportPNG() {
-  const c = canvas.value
-  if (!c) return
-  download('fabric-scene.png', c.toDataURL({ format: 'png', multiplier: 2 }))
-  message.success('已导出 PNG')
 }
 
 function handleKeydown(e: KeyboardEvent) {

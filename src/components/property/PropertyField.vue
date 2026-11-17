@@ -2,8 +2,7 @@
 import type { FabricObject } from 'fabric'
 import { NFlex, NFormItem, NInputNumber, NTag } from 'naive-ui'
 import { computed } from 'vue'
-import { FIELD_COMPONENTS, FIELD_DEFAULT_PROPS } from '../../property/fields.ts'
-import type { FieldDef, ShapeModel } from '../../property/types.ts'
+import { FIELD_COMPONENTS, FIELD_DEFAULT_PROPS, type FieldDef, type ShapeModel } from '../../config/property_form.ts'
 
 const props = defineProps<{ field: FieldDef; model: ShapeModel; object: FabricObject | null }>()
 

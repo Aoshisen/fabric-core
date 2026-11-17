@@ -48,17 +48,17 @@
     │   ├── index.ts            #    浏览器入口：re-export FontText + font
     │   └── node.ts             #    node 入口（#fabric 解析到 fabric/node）
     │
-    ├── config/
-    │   └── sidebar.ts          # 左侧栏配置：分组 / 按钮 / action（纯数据）
+    ├── config/                 # 声明式配置（纯数据，无状态）
+    │   ├── sidebar.ts          #   左侧栏：分组 / 按钮 / action
+    │   └── property_form.ts    #   属性表单：模型类型 + 字段→组件映射 + 每类图层 schema
     │
-    ├── property/               # ③ 属性面板数据层（纯数据 / 逻辑，无 .vue）
-    │   ├── types.ts            #    ShapeModel / FieldDef / SectionDef
-    │   ├── fields.ts           #    FieldKind → 展示组件 + 默认 props
-    │   ├── schemas.ts          #    每类图层的字段 schema（match + fields）
-    │   └── useObjectModel.ts   #    对象读取 + 表单双向绑定
+    ├── composables/            # 有状态的 hook（逻辑层）
+    │   ├── useEditorActions.ts #   编辑器命令：创建 / 删除 / 层级 / 导出
+    │   └── useObjectModel.ts   #   对象读取 + 表单 ↔ 对象双向绑定
+    │
     │
     ├── components/             # ④ 编辑器 UI（依赖上面三层）
-    │   ├── FabricEditor.vue    #    三栏编排 + 画布生命周期 + 命令
+    │   ├── FabricEditor.vue    #    三栏编排 + 画布生命周期（命令见 composables）
     │   ├── EditorSidebar.vue   #    左侧面板：品牌 + 配置循环 + 文件选择
     │   ├── SidebarGroup.vue    #    单分组渲染（标题 + 1/2 列按钮）
     │   ├── PropertyPanel.vue   #    右侧面板壳（标题 / 空态）
@@ -82,12 +82,13 @@ components ──→ property
 | --- | --- | --- | --- | --- |
 | 字体加载 | `src/font` | `fetch` / `FontFace` / `canvas`（通过 `#font-runtime` 注入） | URL 解析、`@font-face` 生成、注册、错误分类、缓存 | 不 import Vue / fabric / components |
 | 可复用组件 | `src/libs` | `src/font` | 提供能直接放进任意 fabric 画布的类（`FontText`） | 不 import components / property |
-| 属性数据 | `src/property` | fabric、`src/libs` | 字段 schema、字段→组件映射、对象↔表单同步 | 不写模板、不 import components |
+| 声明式配置 | `src/config` | fabric、`src/libs`、naive-ui | 侧栏按钮、属性表单类型 / 控件映射 / schema | 不放状态、不写模板 |
+| 逻辑 hook | `src/composables` | `src/config`、fabric | 编辑器命令、对象↔表单同步 | 不写模板 |
 | 编辑器 UI | `src/components` | 以上全部 + `naive-ui` | 三栏布局、命令、画布生命周期 | 不直接拼字段定义（交给 property） |
 
 ### 数据流
 
-状态和命令都集中在 `components/FabricEditor.vue`（`canvas` / `activeObject` / 计数），子组件只做两件事：
+状态在 `components/FabricEditor.vue`（`canvas` / `activeObject` / 计数），命令在 `composables/useEditorActions.ts`（创建 / 删除 / 层级 / 导出），子组件只做两件事：
 
 - **收数据**：`object` / `group` / `hasSelection` 等 props
 - **调回调**：`onAction(item)`、`onAddImage(file)`、`onSelect(item)` 这类函数 props
@@ -98,18 +99,18 @@ components ──→ property
 
 1. **新增基础图形**
    - `config/sidebar.ts` 的「基础图形」分组里加一项（`action: 'add-shape'` + `payload: { kind, label }`）
-   - `components/FabricEditor.vue` 的 `createShape` 加一个 `case`
+   - `composables/useEditorActions.ts` 的 `createShape` 加一个 `case`
    - 需要专属属性时，走下面第 2 条
 2. **新增可编辑属性**
-   - `property/types.ts` 的 `ShapeModel` 加字段
-   - `property/schemas.ts` 对应 section 加 `FieldDef`（`kind` 决定用哪个控件）
-   - 若该字段需要从对象读出来，在 `property/useObjectModel.ts` 的 `readObject` 补一行
+   - `config/property_form.ts` 的 `ShapeModel` 加字段
+   - 同文件的对应 section 加 `FieldDef`（`kind` 决定用哪个控件）
+   - 若该字段需要从对象读出来，在 `composables/useObjectModel.ts` 的 `readObject` 补一行
 3. **新增自定义图层**
    - 类放 `src/libs/`，并从 `src/libs/index.ts` 导出
-   - `property/schemas.ts` 加一个 `match` 该类型的新 section
-   - `config/sidebar.ts` 加按钮项（新 action），`components/FabricEditor.vue` 的 `onAction` 加分支
+   - `config/property_form.ts` 加一个 `match` 该类型的新 section
+   - `config/sidebar.ts` 加按钮项（新 action），`composables/useEditorActions.ts` 的 `onAction` 加分支
 4. **新增字段控件类型**
-   - `property/fields.ts` 的 `FIELD_COMPONENTS` 加映射、`FIELD_DEFAULT_PROPS` 加默认 props
+   - `config/property_form.ts` 的 `FIELD_COMPONENTS` 加映射、`FIELD_DEFAULT_PROPS` 加默认 props
 5. **调整字体来源 / 加载行为**
    - 只动 `src/font/`，上层无需修改
    - 浏览器 / node 的差异写在 `runtime.*.ts`，由 `package.json` 的 `imports.#font-runtime` 选择
