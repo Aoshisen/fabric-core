@@ -2,8 +2,8 @@
 import {
   Canvas,
   Circle,
-  FabricImage,
   Ellipse,
+  FabricImage,
   IText,
   Path,
   Polygon,
@@ -12,23 +12,18 @@ import {
   Triangle,
   type FabricObject,
 } from 'fabric'
-import {
-  NButton,
-  NFlex,
-  NGi,
-  NGrid,
-  NLayout,
-  NLayoutContent,
-  NLayoutFooter,
-  NLayoutSider,
-  useMessage,
-} from 'naive-ui'
+import { NFlex, NLayout, NLayoutContent, NLayoutFooter, NLayoutSider, useMessage } from 'naive-ui'
 import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { FontText } from '../libs/index.ts'
+import EditorSidebar from './EditorSidebar.vue'
+import PropertyPanel from './PropertyPanel.vue'
+
+type ShapeKind = 'rect' | 'circle' | 'ellipse' | 'triangle' | 'polyline' | 'polygon' | 'path'
 
 const workspaceRef = ref<HTMLDivElement | null>(null)
 const canvasElRef = ref<HTMLCanvasElement | null>(null)
 const canvas = shallowRef<Canvas | null>(null)
+const activeObject = shallowRef<FabricObject | null>(null)
 const message = useMessage()
 
 const objectCount = ref(0)
@@ -37,7 +32,6 @@ const selectedCount = ref(0)
 let resizeObserver: ResizeObserver | null = null
 let cascade = 0
 
-/** 自定义 FontText 用的在线字体 */
 const FONT = {
   name: 'Noto Sans SC',
   url: 'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5.2.5/files/noto-sans-sc-chinese-simplified-400-normal.woff',
@@ -48,25 +42,13 @@ function nextColor() {
   return accents[cascade++ % accents.length]
 }
 
-type ShapeKind = 'rect' | 'circle' | 'ellipse' | 'triangle' | 'polyline' | 'polygon' | 'path'
-
-const shapes: Array<{ kind: ShapeKind; label: string }> = [
-  { kind: 'rect', label: '矩形' },
-  { kind: 'circle', label: '圆形' },
-  { kind: 'ellipse', label: '椭圆' },
-  { kind: 'triangle', label: '三角形' },
-  { kind: 'polyline', label: '折线' },
-  { kind: 'polygon', label: '多边形' },
-  { kind: 'path', label: '路径' },
-]
-
-const hasSelection = () => selectedCount.value > 0
-
 function syncCounts() {
   const c = canvas.value
   if (!c) return
   objectCount.value = c.getObjects().length
-  selectedCount.value = c.getActiveObjects().length
+  const active = c.getActiveObjects()
+  selectedCount.value = active.length
+  activeObject.value = active.length === 1 ? active[0] : null
 }
 
 function resize() {
@@ -99,7 +81,6 @@ function createShape(kind: ShapeKind): FabricObject {
       return new Ellipse({ left: left + 30, top, rx: 80, ry: 55, fill: nextColor() })
     case 'triangle':
       return new Triangle({ left, top, width: 180, height: 140, fill: nextColor() })
-
     case 'polyline':
       return new Polyline(
         [
@@ -126,10 +107,9 @@ function createShape(kind: ShapeKind): FabricObject {
   }
 }
 
-function addShape(kind: ShapeKind, label: string) {
+function addObject(obj: FabricObject, label: string) {
   const c = canvas.value
   if (!c) return
-  const obj = createShape(kind)
   c.add(obj)
   c.setActiveObject(obj)
   c.requestRenderAll()
@@ -137,45 +117,11 @@ function addShape(kind: ShapeKind, label: string) {
   message.success(`已添加${label}`)
 }
 
-/** 隐藏的 file input，按钮只负责触发它 */
-const fileInputRef = ref<HTMLInputElement | null>(null)
-
-function pickImage() {
-  fileInputRef.value?.click()
-}
-
-function onFileChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (file) void addImage(file)
-}
-
-async function addImage(file: File) {
-  const c = canvas.value
-  if (!c) return
-
-  const url = URL.createObjectURL(file)
-  try {
-    const image = await FabricImage.fromURL(url)
-    const { x, y } = center()
-    const scale = Math.min(1, 240 / Math.max(image.width, image.height))
-    image.set({ left: x, top: y, originX: 'center', originY: 'center', scaleX: scale, scaleY: scale })
-    c.add(image)
-    c.setActiveObject(image)
-    c.requestRenderAll()
-    syncCounts()
-    message.success('已添加图片')
-  } catch (error) {
-    message.error(`图片加载失败：${error instanceof Error ? error.message : String(error)}`)
-  } finally {
-    URL.revokeObjectURL(url)
-  }
+function addShape(kind: ShapeKind, label: string) {
+  addObject(createShape(kind), label)
 }
 
 function addText() {
-  const c = canvas.value
-  if (!c) return
   const { x, y } = center()
   const text = new IText('双击编辑文本', {
     left: x - 70,
@@ -184,11 +130,7 @@ function addText() {
     fontSize: 28,
     fill: '#1b2027',
   })
-  c.add(text)
-  c.setActiveObject(text)
-  c.requestRenderAll()
-  syncCounts()
-  message.success('已添加文本，双击可编辑')
+  addObject(text, '文本')
 }
 
 function addFontText() {
@@ -217,6 +159,23 @@ function addFontText() {
     })
 }
 
+async function addImage(file: File) {
+  const c = canvas.value
+  if (!c) return
+  const url = URL.createObjectURL(file)
+  try {
+    const image = await FabricImage.fromURL(url)
+    const { x, y } = center()
+    const scale = Math.min(1, 240 / Math.max(image.width, image.height))
+    image.set({ left: x, top: y, originX: 'center', originY: 'center', scaleX: scale, scaleY: scale })
+    addObject(image, '图片')
+  } catch (error) {
+    message.error(`图片加载失败：${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
 function removeSelected() {
   const c = canvas.value
   if (!c) return
@@ -226,7 +185,7 @@ function removeSelected() {
     return
   }
   c.discardActiveObject()
-  active.forEach((obj: FabricObject) => c.remove(obj))
+  active.forEach((obj) => c.remove(obj))
   c.requestRenderAll()
   syncCounts()
   message.success(`已删除 ${active.length} 个对象`)
@@ -282,7 +241,7 @@ function exportPNG() {
 
 function handleKeydown(e: KeyboardEvent) {
   const target = e.target as HTMLElement | null
-  if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return
+  if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
 
   const c = canvas.value
   if (!c) return
@@ -310,9 +269,7 @@ onMounted(() => {
 
   resize()
 
-  const onSelection = () => {
-    selectedCount.value = c.getActiveObjects().length
-  }
+  const onSelection = () => syncCounts()
   c.on('selection:created', onSelection)
   c.on('selection:updated', onSelection)
   c.on('selection:cleared', onSelection)
@@ -342,78 +299,40 @@ onBeforeUnmount(() => {
   canvas.value = null
 })
 </script>
+
 <template>
   <n-layout has-sider class="editor" content-style="height: 100%">
-    <n-layout-sider :width="232" bordered :native-scrollbar="false" content-style="padding: 18px 16px">
-      <n-flex vertical :size="18" style="height: 100%" justify="space-between">
-        <n-flex vertical :size="18">
-          <n-flex align="center" :size="10">
-            <span class="dot" />
-            <n-flex vertical :size="2">
-              <h1>fabric-core</h1>
-              <p>Vite 8 · Vue 3.5 · fabric 7</p>
-            </n-flex>
-          </n-flex>
-
-          <n-flex vertical :size="6">
-            <p class="group-title">基础图形</p>
-            <n-grid :cols="2" :x-gap="6" :y-gap="6">
-              <n-gi v-for="shape in shapes" :key="shape.kind">
-                <n-button size="small" block secondary @click="addShape(shape.kind, shape.label)">
-                  {{ shape.label }}
-                </n-button>
-              </n-gi>
-            </n-grid>
-          </n-flex>
-
-          <n-flex vertical :size="6">
-            <p class="group-title">自定义图层</p>
-            <n-button size="small" type="primary" block @click="addFontText">FontText（在线字形）</n-button>
-            <n-button size="small" block @click="addText">文本（IText）</n-button>
-            <n-button size="small" block secondary @click="pickImage">图片（本地上传）</n-button>
-            <input ref="fileInputRef" type="file" accept="image/*" hidden @change="onFileChange" />
-          </n-flex>
-
-          <n-flex vertical :size="6">
-            <p class="group-title">层级</p>
-            <n-grid :cols="2" :x-gap="6" :y-gap="6">
-              <n-gi>
-                <n-button size="small" block :disabled="!hasSelection()" @click="bringToFront">置顶</n-button>
-              </n-gi>
-              <n-gi>
-                <n-button size="small" block :disabled="!hasSelection()" @click="sendToBack">置底</n-button>
-              </n-gi>
-            </n-grid>
-          </n-flex>
-
-          <n-flex vertical :size="6">
-            <p class="group-title">操作</p>
-            <n-button size="small" type="error" secondary block :disabled="!hasSelection()" @click="removeSelected">
-              删除选中
-            </n-button>
-            <n-button size="small" tertiary block @click="clearAll">清空画布</n-button>
-          </n-flex>
-
-          <n-flex vertical :size="6">
-            <p class="group-title">导出</p>
-            <n-grid :cols="2" :x-gap="6" :y-gap="6">
-              <n-gi>
-                <n-button size="small" block secondary @click="exportJSON">JSON</n-button>
-              </n-gi>
-              <n-gi>
-                <n-button size="small" block secondary @click="exportPNG">PNG</n-button>
-              </n-gi>
-            </n-grid>
-          </n-flex>
-        </n-flex>
-
-        <p class="hint">提示：Delete 删除 · Cmd/Ctrl + 滚轮缩放 · Shift 多选</p>
-      </n-flex>
+    <n-layout-sider
+      :width="232"
+      bordered
+      :native-scrollbar="false"
+      content-style="padding: 18px 16px"
+    >
+      <EditorSidebar
+        :object-count="objectCount"
+        :selected-count="selectedCount"
+        @add-shape="addShape"
+        @add-text="addText"
+        @add-font-text="addFontText"
+        @add-image="addImage"
+        @remove="removeSelected"
+        @clear="clearAll"
+        @front="bringToFront"
+        @back="sendToBack"
+        @export-json="exportJSON"
+        @export-png="exportPNG"
+      />
     </n-layout-sider>
 
-    <n-layout style="height: 100%" content-style="display: flex; flex-direction: column; height: 100%;">
-      <NLayoutContent style="flex: 1; min-height: 0" :native-scrollbar="false"
-        content-style="height: 100%; background: #ffffff;">
+    <n-layout
+      style="height: 100%"
+      content-style="display: flex; flex-direction: column; height: 100%;"
+    >
+      <NLayoutContent
+        style="flex: 1; min-height: 0"
+        :native-scrollbar="false"
+        content-style="height: 100%; background: #ffffff;"
+      >
         <div ref="workspaceRef" class="workspace">
           <canvas ref="canvasElRef" />
         </div>
@@ -426,54 +345,23 @@ onBeforeUnmount(() => {
         </n-flex>
       </n-layout-footer>
     </n-layout>
+
+    <n-layout-sider
+      sider-placement="right"
+      :width="272"
+      bordered
+      :native-scrollbar="false"
+      content-style="padding: 16px"
+    >
+      <PropertyPanel :canvas="canvas" :object="activeObject" />
+    </n-layout-sider>
   </n-layout>
 </template>
+
 <style scoped>
-.editor {
-  height: 100%;
-}
+.editor { height: 100%; }
 
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 12px var(--accent);
-  flex: 0 0 auto;
-}
+.workspace { position: relative; width: 100%; height: 100%; overflow: hidden; }
 
-h1 {
-  margin: 0;
-  font-size: 15px;
-  letter-spacing: 0.02em;
-}
-
-p {
-  margin: 0;
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-.group-title {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-}
-
-.hint {
-  line-height: 1.6;
-}
-
-.workspace {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
-.statusbar {
-  font-size: 12px;
-  color: var(--text-dim);
-}
+.statusbar { font-size: 12px; color: var(--text-dim); }
 </style>

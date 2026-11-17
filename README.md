@@ -47,8 +47,18 @@
     │   └── node.ts             # node 入口：re-export index（fabric/node 由 #fabric 映射）
     ├── demo/
     │   └── font.node.ts        # 可运行的 node 端演示
+    ├── property/                # 属性面板的数据层（无 Vue 组件）
+    │   ├── types.ts             # FieldDef / SectionDef / ShapeModel
+    │   ├── fields.ts            # 字段类型 → 展示组件映射
+    │   ├── schemas.ts           # 每种图层的字段 schema（数据）
+    │   └── useObjectModel.ts    # 对象读取 + 表单双向绑定（核心交互）
     └── components/
-        └── FabricEditor.vue   # 画布编辑器示例
+        ├── FabricEditor.vue     # 画布生命周期 + 编排（左栏 / 画布 / 属性面板）
+        ├── EditorSidebar.vue    # 左侧创建面板
+        ├── PropertyPanel.vue    # 右侧面板外壳（标题 / 空态）
+        └── property/
+            ├── PropertyField.vue    # 单字段渲染
+            └── PropertyForm.vue     # 聚合：按图层类型选 schema
 ```
 
 ## fabric.js 7 迁移要点
@@ -83,6 +93,7 @@ const rect = new Rect({ ... })
 - 层级调整（置顶 / 置底）
 - `Delete` / `Backspace` 删除选中（文本编辑中不拦截）
 - `Cmd/Ctrl + 滚轮` 以光标为中心缩放
+- 右侧属性面板：位置 / 角度 / 不透明度 / 填充 / 描边 / 线宽；按类型显示尺寸（矩形宽高圆角、圆半径、椭圆 rx/ry、Textbox 宽度）；文本内容 / 字号 / 行高 / 字距 / 对齐 / 字重；FontText 显示字体名与地址
 - 导出场景 JSON、导出 PNG（2x）
 - `ResizeObserver` 自适应容器尺寸，卸载时 `dispose()`
 
