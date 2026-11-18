@@ -14,3 +14,17 @@ export type { FontTextInstance, FontTextOptions, FontTextStatus, FontSource } fr
 export { fontManager, Font, FontError, FontManager } from '../font/index.ts'
 export type { FontErrorCode, FontRequest } from '../font/index.ts'
 export type { FontFormat, FontStatus, FontURLDescriptor } from '../font/index.ts'
+
+// 图像图层：能力按 mixin 拆分，ImageLayer 是组合好的即用版本
+export { ImageLayer, loadImage, withImagePipeline, withFillMode, withPixelFilter, withOutline, withMask } from './image/index.ts'
+export type {
+  Constructor,
+  FillMode,
+  ImageElement,
+  ImageLayerHost,
+  ImageLayerOptions,
+  MaskState,
+  OutlineState,
+  PixelFilterState,
+  StrokeAlign,
+} from './image/index.ts'

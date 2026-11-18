@@ -1,6 +1,7 @@
 import { Circle, Ellipse, IText, Rect, Textbox, type Canvas, type FabricObject } from 'fabric'
 import { onScopeDispose, reactive, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import type { ShapeModel } from '../config/property_form.ts'
+import { ImageLayer } from '../libs/index.ts'
 
 function round(value: number): number {
   return Math.round(value * 100) / 100
@@ -13,8 +14,8 @@ function readObject(object: FabricObject): ShapeModel {
     top: round(object.top),
     angle: round(object.angle),
     opacity: object.opacity,
-    fill: typeof object.fill === 'string' ? object.fill : '',
-    stroke: typeof object.stroke === 'string' ? object.stroke : '',
+    fill: typeof object.fill === 'string' ? object.fill : null,
+    stroke: typeof object.stroke === 'string' ? object.stroke : null,
     strokeWidth: object.strokeWidth,
   }
 
@@ -31,6 +32,16 @@ function readObject(object: FabricObject): ShapeModel {
     next.ry = round(object.ry)
   } else if (object instanceof Textbox) {
     next.width = round(object.width)
+  }
+
+  if (object instanceof ImageLayer) {
+    next.fillMode = object.fillMode
+    next.removeWhite = object.removeWhite
+    next.whiteThreshold = object.whiteThreshold
+    next.tintColor = object.tintColor ?? null
+    next.outlineWidth = object.outlineWidth
+    next.outlineColor = object.outlineColor ?? null
+    next.outlineAlign = object.outlineAlign
   }
 
   if (object instanceof IText) {
@@ -83,6 +94,9 @@ export function useObjectModel(options: UseObjectModelOptions) {
     }
 
     object.set(patch as never)
+    // ImageLayer 的滤镜 / 描边 / 填充方式需要重跑管线
+    const refreshable = object as unknown as { refresh?: () => Promise<void> }
+    if (typeof refreshable.refresh === 'function') void refreshable.refresh()
     object.setCoords()
     object.dirty = true
     toValue(options.canvas)?.requestRenderAll()

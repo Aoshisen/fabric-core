@@ -18,6 +18,9 @@ const hasSelection = () => props.selectedCount > 0
 function onSelect(item: SidebarItem) {
   props.onAction(item)
 }
+const hint = "提示：Delete 删除 · Cmd/Ctrl + 滚轮缩放 · Shift 多选"
+const title = "fabric-core"
+const secondary_title = "Vite 8 · Vue 3.5 · fabric 7"
 </script>
 
 <template>
@@ -26,8 +29,8 @@ function onSelect(item: SidebarItem) {
       <n-flex align="center" :size="10">
         <span class="dot" />
         <n-flex vertical :size="2">
-          <h1>fabric-core</h1>
-          <p>Vite 8 · Vue 3.5 · fabric 7</p>
+          <h1>{{ title }}</h1>
+          <p>{{ secondary_title }}</p>
         </n-flex>
       </n-flex>
 
@@ -35,7 +38,7 @@ function onSelect(item: SidebarItem) {
         :on-select="onSelect" :on-upload="onAddImage" />
     </n-flex>
 
-    <p class="hint">提示：Delete 删除 · Cmd/Ctrl + 滚轮缩放 · Shift 多选</p>
+    <p class="hint">{{ hint }}</p>
   </n-flex>
 </template>
 

@@ -7,7 +7,7 @@
 import { Circle, Ellipse, FabricImage, IText, Rect, Textbox, type FabricObject } from 'fabric'
 import { NColorPicker, NInput, NInputNumber, NSelect, NSlider, NTag } from 'naive-ui'
 import type { Component } from 'vue'
-import { FontText } from '../libs/index.ts'
+import { FontText, ImageLayer } from '../libs/index.ts'
 
 /** 表单模型：只放属性面板会编辑的字段 */
 export interface ShapeModel {
@@ -15,8 +15,9 @@ export interface ShapeModel {
   top?: number
   angle?: number
   opacity?: number
-  fill?: string
-  stroke?: string
+  /** 颜色字段统一允许 null：清空后表示无填充 / 无描边 */
+  fill?: string | null
+  stroke?: string | null
   strokeWidth?: number
   width?: number
   height?: number
@@ -29,6 +30,15 @@ export interface ShapeModel {
   charSpacing?: number
   textAlign?: string
   fontWeight?: number
+  /** ImageLayer */
+  fillMode?: 'contain' | 'fill'
+  removeWhite?: boolean
+  whiteThreshold?: number
+  /** ImageLayer 单色滤镜；null = 关闭 */
+  tintColor?: string | null
+  outlineWidth?: number
+  outlineColor?: string | null
+  outlineAlign?: 'outer' | 'inner'
 }
 
 /** 字段用哪种控件渲染（见下方 FIELD_COMPONENTS 映射表） */
@@ -77,7 +87,8 @@ export const FIELD_COMPONENTS: Partial<Record<FieldKind, Component>> = {
 export const FIELD_DEFAULT_PROPS: Record<FieldKind, Record<string, unknown>> = {
   number: { size: 'small', showButton: false, style: 'width: 100%' },
   numberPair: { size: 'small', showButton: false, style: 'width: 100%' },
-  color: { size: 'small', showAlpha: false },
+  // 所有颜色控件都带「清空」按钮，清空后值为 null
+  color: { size: 'small', showAlpha: false, actions: ['clear', 'confirm'] },
   slider: {},
   select: { size: 'small' },
   text: { size: 'small' },
@@ -182,6 +193,49 @@ export const LAYER_SECTIONS: SectionDef[] = [
           ],
         },
       },
+    ],
+  },
+  {
+    title: '图片图层',
+    match: (object) => object instanceof ImageLayer,
+    fields: [
+      {
+        key: 'fillMode',
+        label: '填充方式',
+        kind: 'select',
+        props: {
+          options: [
+            { label: '完整显示（contain）', value: 'contain' },
+            { label: '铺满裁切（fill）', value: 'fill' },
+          ],
+        },
+      },
+      {
+        key: 'removeWhite',
+        label: '去白底',
+        kind: 'select',
+        props: {
+          options: [
+            { label: '关闭', value: false },
+            { label: '开启', value: true },
+          ],
+        },
+      },
+      { key: 'whiteThreshold', label: '白色阈值', kind: 'number', props: { min: 0, max: 255 } },
+      { key: 'tintColor', label: '单色滤镜', kind: 'color' },
+      {
+        key: 'outlineAlign',
+        label: '描边位置',
+        kind: 'select',
+        props: {
+          options: [
+            { label: '外描边', value: 'outer' },
+            { label: '内描边', value: 'inner' },
+          ],
+        },
+      },
+      { key: 'outlineWidth', label: '描边宽度', kind: 'number', props: { min: 0, step: 0.5 } },
+      { key: 'outlineColor', label: '描边颜色', kind: 'color' },
     ],
   },
   {

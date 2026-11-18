@@ -1,7 +1,6 @@
 import {
   Circle,
   Ellipse,
-  FabricImage,
   IText,
   Path,
   Polygon,
@@ -13,7 +12,16 @@ import {
 } from 'fabric'
 import { toValue, type MaybeRefOrGetter } from 'vue'
 import type { ShapeKind, SidebarItem } from '../config/sidebar.ts'
-import { FontText } from '../libs/index.ts'
+import { FontText, ImageLayer, loadImage } from '../libs/index.ts'
+
+function readFileAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'))
+    reader.readAsDataURL(file)
+  })
+}
 
 /** 只关心成功 / 失败提示，避免依赖 naive-ui 的完整 MessageApi 类型 */
 export interface MessageLike {
@@ -154,16 +162,21 @@ export function useEditorActions(options: UseEditorActionsOptions) {
     const canvas = canvasOf()
     if (!canvas) return
 
-    const url = URL.createObjectURL(file)
     try {
-      const image = await FabricImage.fromURL(url)
-      const scale = Math.min(1, 240 / Math.max(image.width, image.height))
-      image.set({ originX: 'center', originY: 'center', scaleX: scale, scaleY: scale })
-      addObject(image, '图片')
+      // 用 data URL 而不是 blob URL：ImageLayer 需要保留 src 以便重新加载与序列化
+      const src = await readFileAsDataURL(file)
+      const element = await loadImage(src)
+      const scale = Math.min(1, 240 / Math.max(element.naturalWidth, element.naturalHeight))
+      const layer = new ImageLayer(element, {
+        src,
+        frameWidth: element.naturalWidth * scale,
+        frameHeight: element.naturalHeight * scale,
+        originX: 'center',
+        originY: 'center',
+      })
+      addObject(layer, '图片图层')
     } catch (error) {
       message.error(`图片加载失败：${error instanceof Error ? error.message : String(error)}`)
-    } finally {
-      URL.revokeObjectURL(url)
     }
   }
 

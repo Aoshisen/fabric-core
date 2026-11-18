@@ -8,7 +8,8 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc -b --force",
-    "demo:font:node": "node --experimental-strip-types src/demo/font.node.ts"
+    "demo:font:node": "node --experimental-strip-types src/demo/font.node.ts",
+    "demo:image:node": "node --experimental-strip-types src/demo/image-layer.node.ts"
   },
   "dependencies": {
     "@vueuse/core": "^15.0.0",
